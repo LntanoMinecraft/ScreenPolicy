@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+        Monochrome negative-space silhouette for solid dual-layer offset sheets.
+        Back sheet cleanly separated by a uniform 2.5dp negative-space cutout around the solid front sheet.
+    -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,40 L65,40 A9.5,9.5 0 0,0 56,33.5 L43,33.5 A9.5,9.5 0 0,0 33.5,43 L33.5,56 A9.5,9.5 0 0,0 40,65 L40,52 A12,12 0 0,1 52,40 Z" />
+
+    <!-- Solid front offset rounded sheet ([42.5..74.5], r=9.5dp) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,42.5 L65,42.5 A9.5,9.5 0 0,1 74.5,52 L74.5,65 A9.5,9.5 0 0,1 65,74.5 L52,74.5 A9.5,9.5 0 0,1 42.5,65 L42.5,52 A9.5,9.5 0 0,1 52,42.5 Z" />
+</vector>

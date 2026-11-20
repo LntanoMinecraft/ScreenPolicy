@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScreenPolicy</string>
+    <string name="module_description">Android 17 screen and audio capture policy manager</string>
+
+    <!-- Navigation -->
+    <string name="nav_apps">Apps</string>
+    <string name="nav_logs">Logs</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- 3-State Activation Status -->
+    <string name="status_inactive_title">Module not active</string>
+    <string name="status_inactive_desc">Enable this app in manager, select System Framework and System UI, then reboot</string>
+    <string name="status_scope_missing_title">Incomplete scope</string>
+    <string name="status_missing_framework_desc">System Framework not detected; allowlist policies are unavailable</string>
+    <string name="status_missing_systemui_desc">System UI not detected; Game Dashboard recording fix is unavailable</string>
+    <string name="status_running_title">Running normally</string>
+    <string name="status_running_summary_format">Active · Framework %1$d/%2$d · SystemUI %3$d/%4$d</string>
+    <string name="status_summary_format">Framework %1$d/%2$d · SystemUI %3$d/%4$d</string>
+    <string name="status_detail_ready">Ready</string>
+    <string name="status_detail_waiting">Pending</string>
+    <string name="status_detail_failed">Missed</string>
+
+    <!-- Policy Labels -->
+    <string name="policy_screenshot_title">Screenshots</string>
+    <string name="policy_screenshot_desc">Allow taking screenshots</string>
+    <string name="policy_screen_record_title">Screen recording</string>
+    <string name="policy_screen_record_desc">Allow recording screen video</string>
+    <string name="policy_audio_capture_title">Internal audio</string>
+    <string name="policy_audio_capture_desc">Allow internal app audio capture</string>
+    <string name="policy_capture_detect_title">Capture detection</string>
+    <string name="policy_capture_detect_desc">Suppress screenshot and recording callbacks</string>
+    <string name="policy_game_dashboard_title">Fix Game Dashboard recording</string>
+    <string name="policy_game_dashboard_desc">Fix Game Dashboard projection permission error</string>
+
+    <!-- Apps Screen -->
+    <string name="search_apps_placeholder">Search app name or package</string>
+    <string name="filter_all">All</string>
+    <string name="filter_configured">Configured</string>
+    <string name="filter_system">System apps</string>
+    <string name="action_add_package">Add package</string>
+    <string name="action_clear_search">Clear search</string>
+    <string name="action_reset_app_policy">Turn all off</string>
+    <string name="dialog_add_package_title">Add package name</string>
+    <string name="dialog_add_package_hint">e.g. com.example.app</string>
+    <string name="dialog_confirm">Add</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="snackbar_restart_to_apply">Restart app to apply</string>
+    <string name="empty_apps_title">No matching apps</string>
+    <string name="empty_apps_hint">Adjust search query or filters</string>
+    <string name="badge_screenshot">Shot</string>
+    <string name="badge_screen_record">Rec</string>
+    <string name="badge_audio">Audio</string>
+    <string name="badge_detect">Detect</string>
+    <string name="badge_system">System</string>
+
+    <!-- Logs Screen -->
+    <string name="logs_filter_all">All</string>
+    <string name="logs_filter_errors">Errors only</string>
+    <string name="logs_copy">Copy logs</string>
+    <string name="logs_clear">Clear logs</string>
+    <string name="logs_empty">No logs</string>
+    <string name="logs_copied">Copied to clipboard</string>
+    <string name="logs_cleared">Logs cleared</string>
+    <string name="logs_refresh">Refresh logs</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_group_systemui">System UI</string>
+    <string name="settings_group_debug">Diagnostics</string>
+    <string name="settings_verbose_log_title">Verbose logs</string>
+    <string name="settings_verbose_log_desc">Log allowlist matches for troubleshooting</string>
+    <string name="settings_group_appearance">Appearance</string>
+    <string name="settings_theme_mode">Theme mode</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_language">Language</string>
+    <string name="language_system">System</string>
+    <string name="language_zh">简体中文</string>
+    <string name="language_en">English</string>
+    <string name="settings_dynamic_color_title">Dynamic color</string>
+    <string name="settings_dynamic_color_desc">Match system wallpaper palette</string>
+    <string name="settings_palette_title">Color palette</string>
+    <string name="palette_slate_teal">Slate Teal</string>
+    <string name="palette_ocean_blue">Ocean Blue</string>
+    <string name="palette_forest_green">Forest Green</string>
+    <string name="palette_warm_amber">Warm Amber</string>
+    <string name="settings_group_backup">Configuration</string>
+    <string name="settings_export_title">Export allowlist</string>
+    <string name="settings_export_desc">Save as JSON file</string>
+    <string name="settings_import_title">Import allowlist</string>
+    <string name="settings_import_desc">Restore from JSON file</string>
+    <string name="snackbar_export_success">Allowlist exported</string>
+    <string name="snackbar_export_failed">Export failed</string>
+    <string name="snackbar_import_success">Imported %1$d app policies</string>
+    <string name="snackbar_import_failed">Invalid JSON format</string>
+    <string name="settings_about_version_format">Version %1$s (%2$d) · Android 17</string>
+    <string name="settings_about_scope">Scope: android · com.android.systemui</string>
+</resources>

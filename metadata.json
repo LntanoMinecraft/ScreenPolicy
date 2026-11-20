@@ -1,0 +1,6 @@
+{
+  "name": "录屏策略",
+  "description": "Android 17 录屏与音频捕获策略管理模块，支持按应用白名单独立控制画面限制、音频内录与录屏检测，并提供系统界面游戏侧边栏录屏修复。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
