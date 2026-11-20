@@ -33,9 +33,10 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `policy json codec round-trips 4 independent switches and omits disabled entries`() {
+    fun `policy json codec round-trips 4 independent switches and autoConfirmGameDashboardRecord`() {
         val original = GlobalPolicyConfig(
             fixGameDashboardRecord = true,
+            autoConfirmGameDashboardRecord = true,
             verboseLogging = true,
             appPolicies = mapOf(
                 "com.demo.game" to AppPolicy(
@@ -51,6 +52,7 @@ class ExampleRobolectricTest {
         val decoded = PolicyJsonCodec.decode(encoded)
 
         assertTrue(decoded.fixGameDashboardRecord)
+        assertTrue(decoded.autoConfirmGameDashboardRecord)
         assertTrue(decoded.verboseLogging)
         assertEquals(1, decoded.appPolicies.size)
         assertEquals(
@@ -83,6 +85,7 @@ class ExampleRobolectricTest {
         """.trimIndent()
 
         val decoded = PolicyJsonCodec.decode(legacyJson)
+        assertFalse(decoded.autoConfirmGameDashboardRecord)
         val policy = decoded.appPolicies["com.legacy.app"]
         assertEquals(
             AppPolicy(
@@ -158,6 +161,8 @@ class ExampleRobolectricTest {
         assertTrue(context.getString(R.string.about_github_subtitle).contains("LntanoMinecraft/ScreenPolicy"))
         assertTrue(context.getString(R.string.about_coolapk_subtitle).contains("34054336"))
         assertTrue(context.getString(R.string.settings_about_entry_title).isNotBlank())
+        assertTrue(context.getString(R.string.policy_game_dashboard_auto_confirm_title).isNotBlank())
+        assertTrue(context.getString(R.string.policy_game_dashboard_auto_confirm_desc).isNotBlank())
     }
 
     @Test
@@ -174,5 +179,88 @@ class ExampleRobolectricTest {
             message = "SystemUI hook ready in 4ms (deferred)",
         )
         assertTrue(com.example.hook.DualTrackLogger.snapshotHookStatusCount() >= maxOf(1, before))
+    }
+
+    @Test
+    fun `strict game dashboard auto-confirm gate allows GMS trampoline and rejects third-party apps`() {
+        // Genuine GMS Game Dashboard launches must match
+        assertTrue(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = "com.google.android.gms",
+                callingActivityClassName = "com.google.android.gms.games.GameSessionTrampolineActivity",
+                referrerHost = "com.google.android.gms",
+                intentExtraKeys = emptyList(),
+            )
+        )
+        assertTrue(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = null,
+                callingActivityClassName = "com.google.android.gms.games.GameSessionTrampolineActivity",
+                referrerHost = "android",
+                intentExtraKeys = emptyList(),
+            )
+        )
+        assertTrue(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = "android",
+                callingActivityClassName = null,
+                referrerHost = "com.google.android.gms",
+                intentExtraKeys = emptyList(),
+            )
+        )
+
+        // Third-party apps must ALWAYS be rejected — even if they spoof extras or activity names
+        assertFalse(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = "com.thirdparty.recorder",
+                callingActivityClassName = "com.google.android.gms.games.GameSessionTrampolineActivity",
+                referrerHost = "com.google.android.gms",
+                intentExtraKeys = listOf("game_dashboard_record"),
+                intentStringValues = listOf("com.google.android.gms"),
+            )
+        )
+        assertFalse(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = null,
+                callingActivityClassName = null,
+                referrerHost = "com.evil.spyware",
+                intentExtraKeys = listOf("game_session"),
+            )
+        )
+        // Generic anonymous MediaProjection launch without GMS/Game Dashboard traits must be rejected
+        assertFalse(
+            com.example.hook.GameDashboardRecordHook.matchesStrictGameDashboardTrigger(
+                rawCallingPackage = null,
+                callingActivityClassName = null,
+                referrerHost = "android",
+                intentExtraKeys = listOf("EXTRA_MEDIA_PROJECTION"),
+            )
+        )
+    }
+
+    @Test
+    fun `game dashboard auto-confirm invokes entire-screen grant and degrades silently on unknown methods`() {
+        class FakeGrantActivity : android.app.Activity() {
+            var grantedMode: Int = -1
+            @Suppress("unused")
+            private fun grantMediaProjectionPermission(screenShareMode: Int) {
+                grantedMode = screenShareMode
+            }
+        }
+
+        class FakeChangedSignatureActivity : android.app.Activity()
+
+        val fakeGrant = FakeGrantActivity()
+        val okResult = com.example.hook.GameDashboardRecordHook.tryAutoConfirmEntireScreen(fakeGrant)
+        assertTrue(okResult.succeeded)
+        assertEquals(
+            com.example.hook.GameDashboardRecordHook.SCREEN_SHARE_MODE_ENTIRE_SCREEN,
+            fakeGrant.grantedMode,
+        )
+
+        val fakeDegraded = FakeChangedSignatureActivity()
+        val degradedResult = com.example.hook.GameDashboardRecordHook.tryAutoConfirmEntireScreen(fakeDegraded)
+        assertFalse(degradedResult.succeeded)
+        assertFalse(fakeDegraded.isFinishing)
     }
 }

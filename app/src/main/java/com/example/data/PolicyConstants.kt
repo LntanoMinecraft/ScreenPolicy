@@ -7,6 +7,7 @@ object PolicyConstants {
 
     const val PREF_KEY_CONFIG_JSON = "config_json"
     const val PREF_KEY_FIX_GAME_DASHBOARD = "fix_game_dashboard_record"
+    const val PREF_KEY_AUTO_CONFIRM_GAME_DASHBOARD = "auto_confirm_game_dashboard_record"
     const val PREF_KEY_VERBOSE_LOGGING = "verbose_logging"
 
     const val PREF_UI_THEME_MODE = "theme_mode"

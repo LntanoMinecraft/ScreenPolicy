@@ -34,6 +34,10 @@ object PolicyCache {
         private set
 
     @Volatile
+    var autoConfirmGameDashboardRecord: Boolean = false
+        private set
+
+    @Volatile
     var verboseLogging: Boolean = false
         private set
 
@@ -84,6 +88,10 @@ object PolicyCache {
             PolicyConstants.PREF_KEY_FIX_GAME_DASHBOARD,
             config.fixGameDashboardRecord,
         )
+        autoConfirmGameDashboardRecord = prefs.getBoolean(
+            PolicyConstants.PREF_KEY_AUTO_CONFIRM_GAME_DASHBOARD,
+            config.autoConfirmGameDashboardRecord,
+        )
         verboseLogging = prefs.getBoolean(
             PolicyConstants.PREF_KEY_VERBOSE_LOGGING,
             config.verboseLogging,
@@ -131,6 +139,11 @@ object PolicyCache {
     fun isGameDashboardFixEnabled(): Boolean {
         maybeRefresh()
         return fixGameDashboardRecord
+    }
+
+    fun isGameDashboardAutoConfirmEnabled(): Boolean {
+        maybeRefresh()
+        return fixGameDashboardRecord && autoConfirmGameDashboardRecord
     }
 
     fun isVerboseEnabled(): Boolean {

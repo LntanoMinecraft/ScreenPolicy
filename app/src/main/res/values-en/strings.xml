@@ -32,6 +32,8 @@
     <string name="policy_capture_detect_desc">Suppress screenshot and recording callbacks</string>
     <string name="policy_game_dashboard_title">Fix Game Dashboard recording</string>
     <string name="policy_game_dashboard_desc">Fix Game Dashboard projection permission error</string>
+    <string name="policy_game_dashboard_auto_confirm_title">Auto-confirm Game Dashboard</string>
+    <string name="policy_game_dashboard_auto_confirm_desc">Skip capture dialog and record entire screen</string>
 
     <!-- Apps Screen -->
     <string name="search_apps_placeholder">Search app name or package</string>

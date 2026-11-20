@@ -12,6 +12,7 @@ data class AppPolicy(
 
 data class GlobalPolicyConfig(
     val fixGameDashboardRecord: Boolean = true,
+    val autoConfirmGameDashboardRecord: Boolean = false,
     val verboseLogging: Boolean = false,
     val appPolicies: Map<String, AppPolicy> = emptyMap(),
 )

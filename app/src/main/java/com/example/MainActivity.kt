@@ -281,6 +281,7 @@ private fun ScreenPolicyRoot(
                                 MainTab.SETTINGS -> SettingsScreen(
                                     uiState = uiState,
                                     onFixGameDashboardChange = viewModel::setFixGameDashboardRecord,
+                                    onAutoConfirmGameDashboardChange = viewModel::setAutoConfirmGameDashboardRecord,
                                     onVerboseLoggingChange = viewModel::setVerboseLogging,
                                     onThemeModeChange = viewModel::setThemeMode,
                                     onLanguageChange = viewModel::setAppLanguage,

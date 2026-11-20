@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Download
@@ -87,6 +88,7 @@ import com.example.ui.theme.previewColorsForPalette
 fun SettingsScreen(
     uiState: MainUiState,
     onFixGameDashboardChange: (Boolean) -> Unit,
+    onAutoConfirmGameDashboardChange: (Boolean) -> Unit,
     onVerboseLoggingChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
@@ -144,8 +146,20 @@ fun SettingsScreen(
                     leadingIcon = Icons.Outlined.SportsEsports,
                     checked = uiState.config.fixGameDashboardRecord,
                     onCheckedChange = onFixGameDashboardChange,
-                    shape = expressiveGroupItemShape(0, 1),
+                    shape = expressiveGroupItemShape(0, 2),
                     tag = "switch_game_dashboard_fix",
+                )
+            }
+            item(key = "auto_confirm_game_dashboard") {
+                ExpressiveSwitchRow(
+                    title = stringResource(R.string.policy_game_dashboard_auto_confirm_title),
+                    subtitle = stringResource(R.string.policy_game_dashboard_auto_confirm_desc),
+                    leadingIcon = Icons.Outlined.Bolt,
+                    checked = uiState.config.autoConfirmGameDashboardRecord,
+                    enabled = uiState.config.fixGameDashboardRecord,
+                    onCheckedChange = onAutoConfirmGameDashboardChange,
+                    shape = expressiveGroupItemShape(1, 2),
+                    tag = "switch_game_dashboard_auto_confirm",
                 )
             }
 

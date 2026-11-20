@@ -32,6 +32,8 @@
     <string name="policy_capture_detect_desc">屏蔽截屏与录屏状态回调</string>
     <string name="policy_game_dashboard_title">修复游戏侧边栏录屏</string>
     <string name="policy_game_dashboard_desc">修正游戏仪表盘授权异常</string>
+    <string name="policy_game_dashboard_auto_confirm_title">跳过游戏侧边栏投屏确认</string>
+    <string name="policy_game_dashboard_auto_confirm_desc">仅对游戏仪表盘自动确认全屏录屏</string>
 
     <!-- Apps Screen -->
     <string name="search_apps_placeholder">搜索应用名或包名</string>

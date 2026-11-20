@@ -79,6 +79,10 @@ class PolicyRepository(private val context: Context) {
         prefs.edit()
             .putString(PolicyConstants.PREF_KEY_CONFIG_JSON, serialized)
             .putBoolean(PolicyConstants.PREF_KEY_FIX_GAME_DASHBOARD, config.fixGameDashboardRecord)
+            .putBoolean(
+                PolicyConstants.PREF_KEY_AUTO_CONFIRM_GAME_DASHBOARD,
+                config.autoConfirmGameDashboardRecord,
+            )
             .putBoolean(PolicyConstants.PREF_KEY_VERBOSE_LOGGING, config.verboseLogging)
             .apply()
     }

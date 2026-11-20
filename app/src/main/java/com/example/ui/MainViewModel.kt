@@ -258,6 +258,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(config = next) }
     }
 
+    fun setAutoConfirmGameDashboardRecord(enabled: Boolean) {
+        val next = _uiState.value.config.copy(autoConfirmGameDashboardRecord = enabled)
+        repository.saveGlobalPolicyConfig(next)
+        _uiState.update { it.copy(config = next) }
+    }
+
     fun setVerboseLogging(enabled: Boolean) {
         val next = _uiState.value.config.copy(verboseLogging = enabled)
         repository.saveGlobalPolicyConfig(next)

@@ -12,6 +12,7 @@ import org.json.JSONObject
 object PolicyJsonCodec {
     private const val FIELD_VERSION = "version"
     private const val FIELD_FIX_GAME_DASHBOARD = "fixGameDashboardRecord"
+    private const val FIELD_AUTO_CONFIRM_GAME_DASHBOARD = "autoConfirmGameDashboardRecord"
     private const val FIELD_VERBOSE_LOGGING = "verboseLogging"
     private const val FIELD_APPS = "apps"
     private const val FIELD_ALLOW_SCREENSHOT = "allowScreenshot"
@@ -26,6 +27,7 @@ object PolicyJsonCodec {
         val root = JSONObject().apply {
             put(FIELD_VERSION, SCHEMA_VERSION)
             put(FIELD_FIX_GAME_DASHBOARD, config.fixGameDashboardRecord)
+            put(FIELD_AUTO_CONFIRM_GAME_DASHBOARD, config.autoConfirmGameDashboardRecord)
             put(FIELD_VERBOSE_LOGGING, config.verboseLogging)
 
             val appsObj = JSONObject()
@@ -54,6 +56,7 @@ object PolicyJsonCodec {
         if (rawJson.isNullOrBlank()) return GlobalPolicyConfig()
         val root = JSONObject(rawJson)
         val fixGameDashboard = root.optBoolean(FIELD_FIX_GAME_DASHBOARD, true)
+        val autoConfirmGameDashboard = root.optBoolean(FIELD_AUTO_CONFIRM_GAME_DASHBOARD, false)
         val verboseLogging = root.optBoolean(FIELD_VERBOSE_LOGGING, false)
         val appsObj = root.optJSONObject(FIELD_APPS)
 
@@ -78,6 +81,7 @@ object PolicyJsonCodec {
         }
         return GlobalPolicyConfig(
             fixGameDashboardRecord = fixGameDashboard,
+            autoConfirmGameDashboardRecord = autoConfirmGameDashboard,
             verboseLogging = verboseLogging,
             appPolicies = result,
         )
