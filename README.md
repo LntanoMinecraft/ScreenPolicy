@@ -4,7 +4,8 @@
 
 [](https://github.com/LntanoMinecraft/ScreenPolicy)
 [](https://github.com/LntanoMinecraft/ScreenPolicy)
-[Releases](https://www.google.com/search?q=https://github.com/LntanoMinecraft/ScreenPolicy/releases)
+[](https://github.com/LntanoMinecraft/ScreenPolicy/blob/main/LICENSE)
+[Releases](https://github.com/LntanoMinecraft/ScreenPolicy/releases)
 
 ## 项目简介
 
@@ -24,7 +25,7 @@
 
 ## 使用方法
 
-1. 前往 [GitHub Releases](https://www.google.com/search?q=https://github.com/LntanoMinecraft/ScreenPolicy/releases) 下载最新签名 Release APK 并安装。
+1. 前往 [GitHub Releases](https://github.com/LntanoMinecraft/ScreenPolicy/releases) 下载最新签名 Release APK 并安装。
 2. 在 **LSPosed 管理器** 中启用「录屏策略」，作用域**仅勾选**：
    * `系统框架`（`android`）
    * `系统界面`（`com.android.systemui`）
@@ -40,7 +41,13 @@
 
 * **项目名称**：录屏策略（ScreenPolicy）
 * **应用包名**：`com.lntano.screenpolicy`
-* **项目主页**：[github.com/LntanoMinecraft/ScreenPolicy](https://github.com/LntanoMinecraft/ScreenPolicy)
+* **项目主页**：[https://github.com/LntanoMinecraft/ScreenPolicy](https://github.com/LntanoMinecraft/ScreenPolicy)
 * **维护者**：[LntanoMinecraft](https://github.com/LntanoMinecraft) · [酷安主页](https://www.coolapk.com/u/34054336)
+
+## 开源许可证
+
+Copyright (C) 2026 LntanoMinecraft
+
+本项目采用 [GNU General Public License v3.0 (GPL-3.0)](https://github.com/LntanoMinecraft/ScreenPolicy/blob/main/LICENSE) 协议开源。你可以在遵守 GPL-3.0 条款的前提下自由使用、修改与分发，分发修改版本时需同步开放对应源代码。
 
 *本项目由 Google AI Studio 中的 Gemini 4 Neon 编写构建。*
