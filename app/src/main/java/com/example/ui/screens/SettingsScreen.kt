@@ -22,18 +22,24 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.rounded.Check
@@ -73,7 +79,6 @@ import com.example.ui.components.ExpressiveActionRow
 import com.example.ui.components.ExpressiveSwitchRow
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.expressiveGroupItemShape
-import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.TabularNumericFeature
 import com.example.ui.theme.previewColorsForPalette
 
@@ -89,6 +94,7 @@ fun SettingsScreen(
     onPaletteChange: (AccentPalette) -> Unit,
     onExportUri: (Uri) -> Unit,
     onImportUri: (Uri) -> Unit,
+    onOpenAbout: () -> Unit,
     bottomContentPadding: Dp = 32.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -220,34 +226,80 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "footer") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 24.dp, bottom = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.settings_about_version_format,
-                            BuildConfig.VERSION_NAME,
-                            BuildConfig.VERSION_CODE,
-                        ),
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontFeatureSettings = TabularNumericFeature,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_about_scope),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = JetBrainsMonoFamily,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                    )
-                }
+            item(key = "header_about") {
+                SectionHeader(title = stringResource(R.string.settings_group_about))
             }
+            item(key = "about_entry") {
+                AboutEntryCard(
+                    versionName = BuildConfig.VERSION_NAME,
+                    onClick = onOpenAbout,
+                    shape = expressiveGroupItemShape(0, 1),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutEntryCard(
+    versionName: String,
+    onClick: () -> Unit,
+    shape: Shape,
+) {
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .testTag("action_open_about"),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(
+                text = stringResource(R.string.settings_about_entry_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "v$versionName",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFeatureSettings = TabularNumericFeature,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

@@ -143,4 +143,20 @@ class ExampleRobolectricTest {
         assertEquals(com.example.ui.theme.TabularNumericFeature, typo.labelLarge.fontFeatureSettings)
         assertEquals(com.example.ui.theme.TabularNumericFeature, typo.labelMedium.fontFeatureSettings)
     }
+
+    @Test
+    fun `about screen links and string resources are valid`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertEquals(
+            "https://github.com/LntanoMinecraft/ScreenPolicy",
+            com.example.ui.screens.AboutLinks.GITHUB_URL,
+        )
+        assertEquals(
+            "https://www.coolapk.com/u/34054336",
+            com.example.ui.screens.AboutLinks.COOLAPK_WEB_URL,
+        )
+        assertTrue(context.getString(R.string.about_github_subtitle).contains("LntanoMinecraft/ScreenPolicy"))
+        assertTrue(context.getString(R.string.about_coolapk_subtitle).contains("34054336"))
+        assertTrue(context.getString(R.string.settings_about_entry_title).isNotBlank())
+    }
 }

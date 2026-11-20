@@ -98,6 +98,16 @@
     <string name="snackbar_export_failed">导出失败</string>
     <string name="snackbar_import_success">已导入 %1$d 项应用配置</string>
     <string name="snackbar_import_failed">文件格式无效</string>
+    <string name="settings_group_about">关于</string>
+    <string name="settings_about_entry_title">关于录屏策略</string>
+    <string name="about_screen_title">关于</string>
+    <string name="about_navigate_back">返回</string>
+    <string name="about_version_pill_format">v%1$s (%2$d) · Android 17</string>
+    <string name="about_scope_label">android · com.android.systemui</string>
+    <string name="about_github_title">项目主页（GitHub）</string>
+    <string name="about_github_subtitle">github.com/LntanoMinecraft/ScreenPolicy</string>
+    <string name="about_coolapk_title">开发者酷安</string>
+    <string name="about_coolapk_subtitle">酷安主页 · UID 34054336</string>
     <string name="settings_about_version_format">版本 %1$s (%2$d) · Android 17</string>
     <string name="settings_about_scope">作用域：android · com.android.systemui</string>
 </resources>

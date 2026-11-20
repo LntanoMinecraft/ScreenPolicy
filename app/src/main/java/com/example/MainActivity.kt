@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.MainUiState
 import com.example.ui.MainViewModel
+import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AppsScreen
 import com.example.ui.screens.LogsScreen
 import com.example.ui.screens.SettingsScreen
@@ -126,6 +127,7 @@ private fun ScreenPolicyRoot(
     uiState: MainUiState,
 ) {
     var currentTab by rememberSaveable { mutableStateOf(MainTab.APPS) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -138,7 +140,10 @@ private fun ScreenPolicyRoot(
         }
     }
 
-    BackHandler(enabled = currentTab != MainTab.APPS) {
+    BackHandler(enabled = showAbout) {
+        showAbout = false
+    }
+    BackHandler(enabled = !showAbout && currentTab != MainTab.APPS) {
         currentTab = MainTab.APPS
     }
 
@@ -156,15 +161,47 @@ private fun ScreenPolicyRoot(
                     hostState = snackbarHostState,
                     modifier = Modifier
                         .navigationBarsPadding()
-                        .padding(bottom = if (useNavRail) 12.dp else 88.dp),
+                        .padding(bottom = if (useNavRail || showAbout) 12.dp else 88.dp),
                 )
             },
         ) { innerPadding ->
-            Box(
+            AnimatedContent(
+                targetState = showAbout,
+                transitionSpec = {
+                    val slideSpring = spring<IntOffset>(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    )
+                    val fadeSpring = spring<Float>(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    )
+                    if (targetState) {
+                        (slideInHorizontally(animationSpec = slideSpring) { it / 6 } +
+                            fadeIn(animationSpec = fadeSpring)) togetherWith
+                            (slideOutHorizontally(animationSpec = slideSpring) { -it / 10 } +
+                                fadeOut(animationSpec = fadeSpring))
+                    } else {
+                        (slideInHorizontally(animationSpec = slideSpring) { -it / 10 } +
+                            fadeIn(animationSpec = fadeSpring)) togetherWith
+                            (slideOutHorizontally(animationSpec = slideSpring) { it / 6 } +
+                                fadeOut(animationSpec = fadeSpring))
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-            ) {
+                label = "about_secondary_transition",
+            ) { isAboutVisible ->
+                if (isAboutVisible) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        AboutScreen(onBack = { showAbout = false })
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (useNavRail) {
                         NavigationRail(
@@ -251,6 +288,7 @@ private fun ScreenPolicyRoot(
                                     onPaletteChange = viewModel::setPalette,
                                     onExportUri = viewModel::exportConfig,
                                     onImportUri = viewModel::importConfig,
+                                    onOpenAbout = { showAbout = true },
                                     bottomContentPadding = bottomContentPadding,
                                 )
                             }
@@ -267,6 +305,8 @@ private fun ScreenPolicyRoot(
                             .navigationBarsPadding()
                             .padding(horizontal = 20.dp, vertical = 12.dp),
                     )
+                }
+                    }
                 }
             }
         }

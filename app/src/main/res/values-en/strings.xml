@@ -98,6 +98,16 @@
     <string name="snackbar_export_failed">Export failed</string>
     <string name="snackbar_import_success">Imported %1$d app policies</string>
     <string name="snackbar_import_failed">Invalid JSON format</string>
+    <string name="settings_group_about">About</string>
+    <string name="settings_about_entry_title">About ScreenPolicy</string>
+    <string name="about_screen_title">About</string>
+    <string name="about_navigate_back">Back</string>
+    <string name="about_version_pill_format">v%1$s (%2$d) · Android 17</string>
+    <string name="about_scope_label">android · com.android.systemui</string>
+    <string name="about_github_title">Project Repository (GitHub)</string>
+    <string name="about_github_subtitle">github.com/LntanoMinecraft/ScreenPolicy</string>
+    <string name="about_coolapk_title">Developer CoolApk</string>
+    <string name="about_coolapk_subtitle">CoolApk · UID 34054336</string>
     <string name="settings_about_version_format">Version %1$s (%2$d) · Android 17</string>
     <string name="settings_about_scope">Scope: android · com.android.systemui</string>
 </resources>
