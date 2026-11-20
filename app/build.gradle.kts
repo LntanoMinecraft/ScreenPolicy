@@ -8,25 +8,12 @@ android {
   namespace = "com.example"
   compileSdk = 36
 
-  val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 4
-  val ciVersionName =
-    System.getenv("RELEASE_VERSION")
-      ?.trim()
-      ?.removePrefix("v")
-      ?.takeIf { it.isNotEmpty() }
-      ?: System.getenv("GITHUB_SHA")
-        ?.trim()
-        ?.take(7)
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { "dev-$it" }
-      ?: "4.0"
-
   defaultConfig {
     applicationId = "com.lntano.screenpolicy"
     minSdk = 35
     targetSdk = 36
-    versionCode = ciRunNumber
-    versionName = ciVersionName
+    versionCode = resolveVersionCode()
+    versionName = resolveVersionName()
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -129,3 +116,17 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+fun resolveVersionCode(): Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 4
+
+fun resolveVersionName(): String =
+  System.getenv("RELEASE_VERSION")
+    ?.trim()
+    ?.removePrefix("v")
+    ?.takeIf { it.isNotEmpty() }
+    ?: System.getenv("GITHUB_SHA")
+      ?.trim()
+      ?.take(7)
+      ?.takeIf { it.isNotEmpty() }
+      ?.let { "dev-$it" }
+    ?: "4.0"
