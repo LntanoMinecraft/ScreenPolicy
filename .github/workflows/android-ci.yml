@@ -22,13 +22,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Gradle cache
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
 
       - name: Ensure debug keystore exists
         run: |
@@ -44,11 +46,8 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --no-configuration-cache
+        run: gradle assembleDebug --no-configuration-cache
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -66,16 +65,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Gradle cache
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        with:
+          gradle-version: wrapper
 
       - name: Decode release keystore
         env:
@@ -94,7 +92,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease -x lintVitalAnalyzeRelease --no-configuration-cache
+        run: gradle assembleRelease -x lintVitalAnalyzeRelease --no-configuration-cache
 
       - name: Rename Release APK
         env:
