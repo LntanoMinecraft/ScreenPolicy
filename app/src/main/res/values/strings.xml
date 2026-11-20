@@ -30,8 +30,8 @@
     <string name="policy_audio_capture_desc">允许录制应用内部音频</string>
     <string name="policy_capture_detect_title">录屏检测</string>
     <string name="policy_capture_detect_desc">屏蔽截屏与录屏状态回调</string>
-    <string name="policy_game_dashboard_title">修复游戏侧边栏录屏</string>
-    <string name="policy_game_dashboard_desc">修正游戏仪表盘授权异常</string>
+    <string name="policy_game_dashboard_title">游戏侧边栏高画质录屏修复</string>
+    <string name="policy_game_dashboard_desc">修正游戏仪表盘授权异常；高码率录制，文件体积较大</string>
     <string name="policy_game_dashboard_auto_confirm_title">跳过游戏侧边栏投屏确认</string>
     <string name="policy_game_dashboard_auto_confirm_desc">仅对游戏仪表盘自动确认全屏录屏</string>
 
@@ -92,14 +92,14 @@
     <string name="palette_rose_coral">玫红</string>
     <string name="palette_slate_graphite">石墨</string>
     <string name="settings_group_backup">配置管理</string>
-    <string name="settings_export_title">导出白名单</string>
-    <string name="settings_export_desc">保存为 JSON 文件</string>
-    <string name="settings_import_title">导入白名单</string>
-    <string name="settings_import_desc">从 JSON 文件恢复</string>
-    <string name="snackbar_export_success">白名单已导出</string>
+    <string name="settings_export_title">导出配置</string>
+    <string name="settings_export_desc">备份白名单与全局策略为 JSON</string>
+    <string name="settings_import_title">导入配置</string>
+    <string name="settings_import_desc">从 JSON 备份文件恢复</string>
+    <string name="snackbar_export_success">配置已导出</string>
     <string name="snackbar_export_failed">导出失败</string>
-    <string name="snackbar_import_success">已导入 %1$d 项应用配置</string>
-    <string name="snackbar_import_failed">文件格式无效</string>
+    <string name="snackbar_import_success">已恢复配置（%1$d 项应用）</string>
+    <string name="snackbar_import_failed">配置文件无效，未修改现有设置</string>
     <string name="settings_group_about">关于</string>
     <string name="settings_about_entry_title">关于录屏策略</string>
     <string name="about_screen_title">关于</string>

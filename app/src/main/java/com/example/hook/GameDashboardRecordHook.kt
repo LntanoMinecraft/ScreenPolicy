@@ -8,9 +8,12 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Spinner
+import android.widget.TextView
 import com.example.data.PolicyConstants
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -20,7 +23,8 @@ import java.lang.reflect.Method
 
 /**
  * Android 17 (API 37) SystemUI hook fixing GMS Game Dashboard screen recording permission failures,
- * with an optional strictly gated auto-confirm entire-screen recording path for GMS Game Dashboard.
+ * with an optional R8-obfuscation-immune auto-confirm entire-screen recording path strictly gated
+ * to GMS Game Dashboard launches.
  *
  * Performance & Boot Safety Design:
  * - Mounted exclusively after a 12-second deferred delay in PolicyModuleEntry (zero impact on
@@ -30,12 +34,15 @@ import java.lang.reflect.Method
  * - Interception of getCallingPackage() is gated by a nanosecond ThreadLocal identity check so
  *   zero work is performed for any other Activity in SystemUI.
  *
- * Security Redline for Auto-Confirm:
- * - Auto-confirm ONLY triggers when both fixGameDashboardRecord and autoConfirmGameDashboardRecord
- *   are enabled AND the launch strictly matches GMS Game Dashboard / GameSessionTrampolineActivity.
- * - Any third-party calling package or third-party referrer is unconditionally rejected.
- * - All reflection steps are isolated in try-catch (Throwable) and silently degrade to displaying
- *   the normal system permission dialog if internal AOSP signatures change.
+ * R8-Immune Auto-Confirm Pipeline (Public SDK APIs Only):
+ * - Zero dependency on private method names or private field names in SystemUI.
+ * - Step 1: Scan Activity & superclass fields by type for a showing android.app.Dialog.
+ * - Step 2: Traverse dialog.window.decorView for Spinner, match "整个屏幕" / "全部屏幕" / "Entire screen"
+ *   (fallback to adapter.count - 1), call setSelection(index) and invoke onItemSelectedListener.
+ * - Step 3: On the next frame, click AlertDialog.BUTTON_POSITIVE or fallback to android.R.id.button1
+ *   / clickable button matching "开始" / "立即开始" / "Start".
+ * - Strictly gated to GMS Game Dashboard / GameSessionTrampolineActivity; third-party apps are
+ *   unconditionally rejected. All failures silently degrade to the native system dialog.
  */
 object GameDashboardRecordHook {
     private const val TAG = "GameDashboardFix"
@@ -43,8 +50,22 @@ object GameDashboardRecordHook {
     private const val CLASS_MP_PERMISSION_ACTIVITY =
         "com.android.systemui.mediaprojection.permission.MediaProjectionPermissionActivity"
 
-    /** AOSP ScreenShareMode.ENTIRE_SCREEN constant (SINGLE_APP = 0, ENTIRE_SCREEN = 1). */
-    internal const val SCREEN_SHARE_MODE_ENTIRE_SCREEN = 1
+    private val RETRY_DELAYS_MS = longArrayOf(60L, 180L)
+
+    private val ENTIRE_SCREEN_KEYWORDS = listOf(
+        "整个屏幕",
+        "全部屏幕",
+        "entire screen",
+    )
+
+    private val CONFIRM_BUTTON_EXACT_LABELS = setOf(
+        "开始",
+        "立即开始",
+        "开始录制",
+        "start",
+        "start now",
+        "start recording",
+    )
 
     private val activeTrampolineActivity = ThreadLocal<Activity?>()
     private val pendingAutoConfirmActivity = ThreadLocal<Activity?>()
@@ -99,7 +120,7 @@ object GameDashboardRecordHook {
                                 !autoConfirmTarget.isDestroyed &&
                                 PolicyCache.isGameDashboardAutoConfirmEnabled()
                             ) {
-                                runAutoConfirmSafely(autoConfirmTarget)
+                                scheduleAutoConfirmFlow(autoConfirmTarget)
                             }
                         } catch (t: Throwable) {
                             DualTrackLogger.logError(
@@ -253,277 +274,370 @@ object GameDashboardRecordHook {
         }
     }
 
-    /**
-     * Isolated auto-confirm entry point. Verifies mPackageName/mUid belong to GMS, then attempts
-     * entire-screen grant via reflection. On any mismatch or exception, silently degrades to
-     * leaving the normal system permission dialog visible.
-     */
-    private fun runAutoConfirmSafely(activity: Activity) {
-        try {
-            if (!ensureAndVerifyGmsIdentityForAutoConfirm(activity)) {
-                logAutoConfirmDegraded("gms_identity_mismatch")
-                return
-            }
-
-            val grantResult = tryAutoConfirmEntireScreen(activity)
-            if (grantResult.succeeded) {
-                dismissActivityDialogSafely(activity)
-                DualTrackLogger.logHit(
-                    scope = PolicyConstants.SCOPE_SYSTEMUI,
-                    tag = TAG,
-                    packageName = GMS_PACKAGE,
-                    action = "auto_confirm_entire_screen (${grantResult.detail})",
-                )
-            } else {
-                logAutoConfirmDegraded(grantResult.detail)
-            }
-        } catch (t: Throwable) {
-            logAutoConfirmDegraded("${t.javaClass.simpleName}: ${t.message ?: "unexpected"}")
-        }
-    }
-
-    internal data class AutoConfirmResult(
+    internal data class AutoConfirmStepResult(
         val succeeded: Boolean,
+        val retryable: Boolean,
         val detail: String,
     )
 
+    internal data class DialogLookupResult(
+        val showingDialog: Dialog?,
+        val anyDialogFound: Boolean,
+    )
+
     /**
-     * Attempts to auto-confirm entire-screen recording on MediaProjectionPermissionActivity.
-     * Strategy 1: Directly invoke grantMediaProjectionPermission with ENTIRE_SCREEN (1).
-     * Strategy 2: Confirm entire-screen selection on dialog/delegate, then trigger positive action.
-     * Never forces finish() without a confirmed grant, ensuring silent fallback on signature drift.
+     * Schedules the R8-immune auto-confirm flow after MediaProjectionPermissionActivity.onCreate().
+     * Posts immediately onto activity.window.decorView and retries up to 2 times (60ms / 180ms)
+     * in case the dialog finishes show() asynchronously.
      */
-    internal fun tryAutoConfirmEntireScreen(activity: Activity): AutoConfirmResult {
-        // Strategy 1: Direct grantMediaProjectionPermission reflection (zero dialog flash)
-        val directResult = tryInvokeGrantMediaProjectionPermission(activity)
-        if (directResult != null) {
-            return directResult
-        }
-
-        // Strategy 2: Confirm ENTIRE_SCREEN on dialog/delegate and invoke positive callback
-        val dialogResult = tryConfirmDialogEntireScreen(activity)
-        if (dialogResult != null) {
-            return dialogResult
-        }
-
-        return AutoConfirmResult(
-            succeeded = false,
-            detail = "no_compatible_grant_path",
-        )
-    }
-
-    private fun tryInvokeGrantMediaProjectionPermission(activity: Activity): AutoConfirmResult? {
-        val methods = collectMethodsNamed(activity.javaClass, "grantMediaProjectionPermission")
-        if (methods.isEmpty()) return null
-
-        // 1a. Exact AOSP Android 14 QPR2–17 signature: grantMediaProjectionPermission(int screenShareMode)
-        val oneIntArg = methods.firstOrNull { method ->
-            method.parameterCount == 1 && isIntType(method.parameterTypes[0])
-        }
-        if (oneIntArg != null) {
-            return try {
-                oneIntArg.isAccessible = true
-                oneIntArg.invoke(activity, SCREEN_SHARE_MODE_ENTIRE_SCREEN)
-                AutoConfirmResult(true, "grantMediaProjectionPermission(int=ENTIRE_SCREEN)")
-            } catch (t: Throwable) {
-                AutoConfirmResult(false, "grant_int_failed:${unwrapCause(t)}")
-            }
-        }
-
-        // 1b. Extended 2-arg signature: grantMediaProjectionPermission(int screenShareMode, LaunchCookie?)
-        val twoArgIntFirst = methods.firstOrNull { method ->
-            method.parameterCount == 2 &&
-                isIntType(method.parameterTypes[0]) &&
-                !method.parameterTypes[1].isPrimitive
-        }
-        if (twoArgIntFirst != null) {
-            return try {
-                twoArgIntFirst.isAccessible = true
-                twoArgIntFirst.invoke(activity, SCREEN_SHARE_MODE_ENTIRE_SCREEN, null)
-                AutoConfirmResult(true, "grantMediaProjectionPermission(int=ENTIRE_SCREEN,null)")
-            } catch (t: Throwable) {
-                AutoConfirmResult(false, "grant_int_obj_failed:${unwrapCause(t)}")
-            }
-        }
-
-        // 1c. Legacy 0-arg signature: grantMediaProjectionPermission()
-        val zeroArg = methods.firstOrNull { it.parameterCount == 0 }
-        if (zeroArg != null) {
-            return try {
-                zeroArg.isAccessible = true
-                zeroArg.invoke(activity)
-                AutoConfirmResult(true, "grantMediaProjectionPermission()")
-            } catch (t: Throwable) {
-                AutoConfirmResult(false, "grant_zero_failed:${unwrapCause(t)}")
-            }
-        }
-
-        return AutoConfirmResult(
-            succeeded = false,
-            detail = "unsupported_grant_overload(${methods.joinToString { it.parameterCount.toString() }})",
-        )
-    }
-
-    private fun tryConfirmDialogEntireScreen(activity: Activity): AutoConfirmResult? {
-        return try {
-            val dialog = findActivityDialog(activity) ?: return null
-            val entireScreenSelected = ensureEntireScreenSelected(activity, dialog)
-            if (!entireScreenSelected) {
-                return AutoConfirmResult(false, "entire_screen_option_unverified")
-            }
-
-            if (activity is DialogInterface.OnClickListener) {
-                activity.onClick(dialog, DialogInterface.BUTTON_POSITIVE)
-                return AutoConfirmResult(true, "dialog_onClick_positive")
-            }
-
-            if (dialog is AlertDialog) {
-                val positiveBtn = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
-                if (positiveBtn != null && positiveBtn.isEnabled) {
-                    positiveBtn.performClick()
-                    return AutoConfirmResult(true, "alert_dialog_positive_click")
-                }
-            }
-
-            AutoConfirmResult(false, "positive_trigger_unavailable")
-        } catch (t: Throwable) {
-            AutoConfirmResult(false, "dialog_confirm_failed:${unwrapCause(t)}")
-        }
-    }
-
-    private fun ensureEntireScreenSelected(activity: Activity, dialog: Dialog): Boolean {
-        val delegate = findDialogDelegate(activity, dialog)
-        if (delegate != null) {
-            val currentMode = readSelectedOptionMode(delegate)
-            if (currentMode == SCREEN_SHARE_MODE_ENTIRE_SCREEN) {
-                return true
-            }
-            if (selectEntireScreenOnDelegate(delegate, dialog)) {
-                return readSelectedOptionMode(delegate) == SCREEN_SHARE_MODE_ENTIRE_SCREEN
-            }
-            return false
-        }
-
-        // If no delegate object exists (older simple AlertDialog without single-app picker),
-        // verify there is no Spinner selector before allowing positive button click.
-        val rootView = dialog.window?.decorView
-        val spinner = rootView?.let { findFirstSpinner(it) }
-        return spinner == null
-    }
-
-    private fun findDialogDelegate(activity: Activity, dialog: Dialog): Any? {
-        val candidates = listOf(activity, dialog)
-        for (owner in candidates) {
-            var cls: Class<*>? = owner.javaClass
-            while (cls != null && cls != Any::class.java) {
-                for (field in cls.declaredFields) {
-                    val typeName = field.type.name
-                    if (typeName.contains("MediaProjectionPermissionDialogDelegate", ignoreCase = true) ||
-                        field.name.contains("delegate", ignoreCase = true)
-                    ) {
-                        val value = safeGetField(field, owner)
-                        if (value != null && hasMethodOrField(value.javaClass, "ScreenShareOption")) {
-                            return value
-                        }
-                    }
-                }
-                cls = cls.superclass
-            }
-        }
-        return null
-    }
-
-    private fun readSelectedOptionMode(delegate: Any): Int? {
-        val selectedOption = invokeZeroArgIfExists(delegate, "getSelectedScreenShareOption")
-            ?: findFieldValueContaining(delegate, "selectedScreenShareOption")
-            ?: return null
-        val modeValue = invokeZeroArgIfExists(selectedOption, "getMode")
-            ?: findFieldValueExact(selectedOption, "mode")
-        return modeValue as? Int
-    }
-
-    private fun selectEntireScreenOnDelegate(delegate: Any, dialog: Dialog): Boolean {
-        val options = findFieldValueContaining(delegate, "screenShareOptions") as? List<*> ?: return false
-        val entireIndex = options.indexOfFirst { option ->
-            if (option == null) return@indexOfFirst false
-            val mode = invokeZeroArgIfExists(option, "getMode")
-                ?: findFieldValueExact(option, "mode")
-            mode == SCREEN_SHARE_MODE_ENTIRE_SCREEN
-        }
-        if (entireIndex < 0) return false
-
-        val spinner = dialog.window?.decorView?.let { findFirstSpinner(it) }
-        if (spinner != null && entireIndex < spinner.count) {
-            spinner.setSelection(entireIndex)
-        }
-
-        val onItemSelected = collectMethodsNamed(delegate.javaClass, "onItemSelected")
-            .firstOrNull { it.parameterCount == 4 }
-        if (onItemSelected != null) {
-            onItemSelected.isAccessible = true
-            onItemSelected.invoke(delegate, spinner, null, entireIndex, 0L)
-            return true
-        }
-
-        // Direct fallback: update selectedScreenShareOption field if writable
-        val optionObj = options[entireIndex]
-        val selectedField = findFieldContaining(delegate.javaClass, "selectedScreenShareOption")
-        if (selectedField != null && optionObj != null && selectedField.type.isInstance(optionObj)) {
-            selectedField.isAccessible = true
-            selectedField.set(delegate, optionObj)
-            return true
-        }
-        return false
-    }
-
-    private fun ensureAndVerifyGmsIdentityForAutoConfirm(activity: Activity): Boolean {
-        return try {
-            val gmsInfo = activity.packageManager.getApplicationInfo(GMS_PACKAGE, 0)
-            val pkgField = XposedHelpers.findFieldIfExists(activity.javaClass, "mPackageName")
-            val currentPkg = pkgField?.get(activity) as? String
-            if (!currentPkg.isNullOrBlank() && currentPkg != GMS_PACKAGE && currentPkg != "android") {
-                return false
-            }
-            if (pkgField != null && currentPkg != GMS_PACKAGE) {
-                pkgField.set(activity, GMS_PACKAGE)
-            }
-            val uidField = XposedHelpers.findFieldIfExists(activity.javaClass, "mUid")
-            if (uidField != null && isIntType(uidField.type)) {
-                val currentUid = uidField.getInt(activity)
-                if (currentUid != gmsInfo.uid) {
-                    uidField.setInt(activity, gmsInfo.uid)
-                }
-            }
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun dismissActivityDialogSafely(activity: Activity) {
+    internal fun scheduleAutoConfirmFlow(activity: Activity) {
         try {
-            val dialog = findActivityDialog(activity) ?: return
-            if (dialog.isShowing) {
-                dialog.dismiss()
+            val decorView = activity.window?.decorView
+            if (decorView != null) {
+                decorView.post {
+                    executeAutoConfirmAttempt(activity, decorView, retryIndex = 0)
+                }
+            } else {
+                Handler(Looper.getMainLooper()).post {
+                    executeAutoConfirmAttempt(activity, activity.window?.decorView, retryIndex = 0)
+                }
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            logAutoConfirmDegraded("schedule_failed:${unwrapCause(t)}")
         }
     }
 
-    private fun findActivityDialog(activity: Activity): Dialog? {
-        val mDialogField = XposedHelpers.findFieldIfExists(activity.javaClass, "mDialog")
-        val direct = mDialogField?.let { safeGetField(it, activity) as? Dialog }
-        if (direct != null) return direct
+    private fun executeAutoConfirmAttempt(
+        activity: Activity,
+        decorView: View?,
+        retryIndex: Int,
+    ) {
+        try {
+            if (activity.isFinishing || activity.isDestroyed) return
 
+            // Step 1: Locate showing Dialog strictly by field type (immune to R8 field renaming)
+            val lookup = findDialogByType(activity)
+            val dialog = lookup.showingDialog
+            if (dialog == null) {
+                val reason = if (lookup.anyDialogFound) {
+                    "step1_dialog_not_showing"
+                } else {
+                    "step1_dialog_not_found"
+                }
+                if (retryIndex < RETRY_DELAYS_MS.size) {
+                    scheduleRetry(activity, decorView, retryIndex)
+                } else {
+                    logAutoConfirmDegraded("$reason (retries=${RETRY_DELAYS_MS.size})")
+                }
+                return
+            }
+
+            // Step 2: Traverse dialog.window.decorView for Spinner and select "Entire screen"
+            val step2 = selectEntireScreenOptionInDialog(dialog)
+            if (!step2.succeeded) {
+                if (step2.retryable && retryIndex < RETRY_DELAYS_MS.size) {
+                    scheduleRetry(activity, decorView, retryIndex)
+                } else {
+                    logAutoConfirmDegraded(step2.detail)
+                }
+                return
+            }
+
+            // Step 3: On the next frame, click the positive confirmation button
+            val postTarget = dialog.window?.decorView ?: decorView
+            val clickTask = Runnable {
+                try {
+                    if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@Runnable
+                    val step3 = clickConfirmButtonInDialog(dialog)
+                    if (step3.succeeded) {
+                        DualTrackLogger.logHit(
+                            scope = PolicyConstants.SCOPE_SYSTEMUI,
+                            tag = TAG,
+                            packageName = GMS_PACKAGE,
+                            action = "auto_confirm_entire_screen (step1=Dialog, ${step2.detail}, ${step3.detail})",
+                        )
+                    } else if (step3.retryable && retryIndex < RETRY_DELAYS_MS.size) {
+                        scheduleRetry(activity, decorView, retryIndex)
+                    } else {
+                        logAutoConfirmDegraded("${step2.detail} -> ${step3.detail}")
+                    }
+                } catch (t: Throwable) {
+                    logAutoConfirmDegraded("step3_exception:${unwrapCause(t)}")
+                }
+            }
+
+            if (postTarget != null) {
+                postTarget.post(clickTask)
+            } else {
+                Handler(Looper.getMainLooper()).post(clickTask)
+            }
+        } catch (t: Throwable) {
+            logAutoConfirmDegraded("attempt_exception:${unwrapCause(t)}")
+        }
+    }
+
+    private fun scheduleRetry(activity: Activity, decorView: View?, retryIndex: Int) {
+        val delayMs = RETRY_DELAYS_MS[retryIndex]
+        val nextRetry = retryIndex + 1
+        val targetView = decorView ?: activity.window?.decorView
+        val runnable = Runnable {
+            executeAutoConfirmAttempt(activity, targetView, nextRetry)
+        }
+        if (targetView != null) {
+            targetView.postDelayed(runnable, delayMs)
+        } else {
+            Handler(Looper.getMainLooper()).postDelayed(runnable, delayMs)
+        }
+    }
+
+    /**
+     * Step 1 (R8-immune): Walks Activity and all superclasses' declaredFields matching Dialog
+     * strictly by type (or runtime Dialog instance on DialogInterface/Object fields), without
+     * referencing any private field name.
+     */
+    internal fun findDialogByType(activity: Activity): DialogLookupResult {
+        var anyDialogFound = false
         var cls: Class<*>? = activity.javaClass
-        while (cls != null && cls != Activity::class.java && cls != Any::class.java) {
+        while (cls != null && cls != Any::class.java) {
             for (field in cls.declaredFields) {
-                if (Dialog::class.java.isAssignableFrom(field.type)) {
-                    val value = safeGetField(field, activity) as? Dialog
-                    if (value != null) return value
+                if (field.type.isPrimitive) continue
+                val typeMatchesDialog = Dialog::class.java.isAssignableFrom(field.type) ||
+                    field.type == DialogInterface::class.java ||
+                    field.type == Any::class.java
+                if (!typeMatchesDialog) continue
+
+                val candidate = safeGetField(field, activity) as? Dialog ?: continue
+                anyDialogFound = true
+                if (candidate.isShowing) {
+                    return DialogLookupResult(showingDialog = candidate, anyDialogFound = true)
                 }
             }
             cls = cls.superclass
+        }
+        return DialogLookupResult(showingDialog = null, anyDialogFound = anyDialogFound)
+    }
+
+    /**
+     * Step 2 (R8-immune): Finds the Spinner inside dialog.window.decorView, matches the
+     * "整个屏幕" / "全部屏幕" / "Entire screen" option (falling back to adapter.count - 1),
+     * updates selection and explicitly dispatches onItemSelectedListener.onItemSelected(...).
+     */
+    internal fun selectEntireScreenOptionInDialog(dialog: Dialog): AutoConfirmStepResult {
+        return try {
+            val rootView = dialog.window?.decorView
+                ?: return AutoConfirmStepResult(
+                    succeeded = false,
+                    retryable = true,
+                    detail = "step2_dialog_decor_null",
+                )
+
+            val spinner = findFirstSpinner(rootView, preferVisible = true)
+                ?: findFirstSpinner(rootView, preferVisible = false)
+
+            if (spinner == null) {
+                // Entire-screen-only dialogs (no single-app selector) do not contain a Spinner.
+                return AutoConfirmStepResult(
+                    succeeded = true,
+                    retryable = false,
+                    detail = "step2=no_spinner_direct_entire_screen",
+                )
+            }
+
+            val adapter = spinner.adapter
+            if (adapter == null || adapter.count <= 0) {
+                return AutoConfirmStepResult(
+                    succeeded = false,
+                    retryable = true,
+                    detail = "step2_spinner_adapter_empty",
+                )
+            }
+
+            val matchIndex = findEntireScreenAdapterIndex(spinner)
+            val targetIndex = if (matchIndex >= 0) matchIndex else adapter.count - 1
+            val itemId = try {
+                adapter.getItemId(targetIndex)
+            } catch (_: Throwable) {
+                targetIndex.toLong()
+            }
+
+            spinner.setSelection(targetIndex, false)
+            val selectedView = spinner.selectedView ?: try {
+                adapter.getView(targetIndex, null, spinner)
+            } catch (_: Throwable) {
+                null
+            }
+            spinner.onItemSelectedListener?.onItemSelected(spinner, selectedView, targetIndex, itemId)
+
+            val matchTag = if (matchIndex >= 0) "matched" else "fallback_last"
+            AutoConfirmStepResult(
+                succeeded = true,
+                retryable = false,
+                detail = "step2=spinner_idx_$targetIndex($matchTag/${adapter.count})",
+            )
+        } catch (t: Throwable) {
+            AutoConfirmStepResult(
+                succeeded = false,
+                retryable = false,
+                detail = "step2_spinner_failed:${unwrapCause(t)}",
+            )
+        }
+    }
+
+    internal fun findEntireScreenAdapterIndex(spinner: Spinner): Int {
+        val adapter = spinner.adapter ?: return -1
+        for (index in 0 until adapter.count) {
+            val labelText = extractAdapterItemText(spinner, index)
+            if (matchesEntireScreenText(labelText)) {
+                return index
+            }
+        }
+        return -1
+    }
+
+    internal fun matchesEntireScreenText(text: String?): Boolean {
+        val normalized = text?.trim()?.lowercase().orEmpty()
+        if (normalized.isEmpty()) return false
+        return ENTIRE_SCREEN_KEYWORDS.any { keyword ->
+            normalized.contains(keyword, ignoreCase = true)
+        }
+    }
+
+    private fun extractAdapterItemText(spinner: Spinner, index: Int): String {
+        val adapter = spinner.adapter ?: return ""
+        val parts = StringBuilder()
+
+        val rawItem = try {
+            adapter.getItem(index)
+        } catch (_: Throwable) {
+            null
+        }
+        if (rawItem != null) {
+            parts.append(rawItem.toString()).append(' ')
+        }
+
+        val itemView = try {
+            adapter.getView(index, null, spinner)
+        } catch (_: Throwable) {
+            null
+        }
+        if (itemView != null) {
+            collectTextFromViewTree(itemView, parts)
+        }
+
+        val dropDownView = try {
+            adapter.getDropDownView(index, null, spinner)
+        } catch (_: Throwable) {
+            null
+        }
+        if (dropDownView != null) {
+            collectTextFromViewTree(dropDownView, parts)
+        }
+
+        return parts.toString()
+    }
+
+    private fun collectTextFromViewTree(view: View, out: StringBuilder) {
+        if (view is TextView) {
+            val text = view.text?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) {
+                out.append(text).append(' ')
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                collectTextFromViewTree(view.getChildAt(i), out)
+            }
+        }
+    }
+
+    /**
+     * Step 3 (R8-immune): Invokes AlertDialog.getButton(BUTTON_POSITIVE).performClick(),
+     * falling back to android.R.id.button1 or any clickable button in custom dialog layouts
+     * whose text matches "开始" / "立即开始" / "Start".
+     */
+    internal fun clickConfirmButtonInDialog(dialog: Dialog): AutoConfirmStepResult {
+        return try {
+            // 3a. Standard AlertDialog positive button
+            val positiveButton = (dialog as? AlertDialog)?.getButton(DialogInterface.BUTTON_POSITIVE)
+            if (positiveButton != null && positiveButton.isEnabled && positiveButton.visibility == View.VISIBLE) {
+                positiveButton.performClick()
+                return AutoConfirmStepResult(
+                    succeeded = true,
+                    retryable = false,
+                    detail = "step3=alert_positive_click",
+                )
+            }
+
+            val rootView = dialog.window?.decorView
+                ?: return AutoConfirmStepResult(
+                    succeeded = false,
+                    retryable = true,
+                    detail = "step3_dialog_decor_null",
+                )
+
+            // 3b. Custom layout button with standard android.R.id.button1
+            val button1 = rootView.findViewById<View?>(android.R.id.button1)
+            if (button1 != null && button1.isClickable && button1.isEnabled && button1.visibility == View.VISIBLE) {
+                button1.performClick()
+                return AutoConfirmStepResult(
+                    succeeded = true,
+                    retryable = false,
+                    detail = "step3=android_button1_click",
+                )
+            }
+
+            // 3c. Custom layout clickable button matching "开始" / "立即开始" / "Start"
+            val textMatchedButton = findConfirmButtonByText(rootView)
+            if (textMatchedButton != null) {
+                textMatchedButton.performClick()
+                return AutoConfirmStepResult(
+                    succeeded = true,
+                    retryable = false,
+                    detail = "step3=custom_text_button_click",
+                )
+            }
+
+            AutoConfirmStepResult(
+                succeeded = false,
+                retryable = true,
+                detail = "step3_positive_button_not_found",
+            )
+        } catch (t: Throwable) {
+            AutoConfirmStepResult(
+                succeeded = false,
+                retryable = false,
+                detail = "step3_click_failed:${unwrapCause(t)}",
+            )
+        }
+    }
+
+    internal fun matchesConfirmButtonText(rawText: CharSequence?): Boolean {
+        val text = rawText?.toString()?.trim()?.lowercase().orEmpty()
+        if (text.isEmpty()) return false
+        if (text.contains("取消") || text.contains("cancel")) return false
+        if (text in CONFIRM_BUTTON_EXACT_LABELS) return true
+        return text.startsWith("开始") || text.startsWith("立即开始") || text.startsWith("start")
+    }
+
+    private fun findConfirmButtonByText(root: View): View? {
+        if (root.visibility != View.VISIBLE) return null
+        if (root.isClickable && root.isEnabled) {
+            if (root is TextView && matchesConfirmButtonText(root.text)) {
+                return root
+            }
+            if (root is ViewGroup) {
+                val sb = StringBuilder()
+                collectTextFromViewTree(root, sb)
+                if (matchesConfirmButtonText(sb.toString())) {
+                    return root
+                }
+            }
+        }
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                val match = findConfirmButtonByText(root.getChildAt(i))
+                if (match != null) return match
+            }
         }
         return null
     }
@@ -537,65 +651,6 @@ object GameDashboardRecordHook {
         )
     }
 
-    private fun collectMethodsNamed(clazz: Class<*>, name: String): List<Method> {
-        val found = ArrayList<Method>()
-        var cls: Class<*>? = clazz
-        while (cls != null && cls != Any::class.java) {
-            for (method in cls.declaredMethods) {
-                if (method.name == name) {
-                    found.add(method)
-                }
-            }
-            cls = cls.superclass
-        }
-        return found
-    }
-
-    private fun isIntType(type: Class<*>): Boolean {
-        return type == Int::class.javaPrimitiveType || type == Int::class.javaObjectType
-    }
-
-    private fun hasMethodOrField(clazz: Class<*>, token: String): Boolean {
-        var cls: Class<*>? = clazz
-        while (cls != null && cls != Any::class.java) {
-            if (cls.declaredMethods.any { it.name.contains(token, ignoreCase = true) }) return true
-            if (cls.declaredFields.any { it.name.contains(token, ignoreCase = true) }) return true
-            cls = cls.superclass
-        }
-        return false
-    }
-
-    private fun invokeZeroArgIfExists(target: Any, methodName: String): Any? {
-        val method = collectMethodsNamed(target.javaClass, methodName)
-            .firstOrNull { it.parameterCount == 0 } ?: return null
-        return try {
-            method.isAccessible = true
-            method.invoke(target)
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    private fun findFieldContaining(clazz: Class<*>, token: String): Field? {
-        var cls: Class<*>? = clazz
-        while (cls != null && cls != Any::class.java) {
-            val match = cls.declaredFields.firstOrNull { it.name.contains(token, ignoreCase = true) }
-            if (match != null) return match
-            cls = cls.superclass
-        }
-        return null
-    }
-
-    private fun findFieldValueContaining(target: Any, token: String): Any? {
-        val field = findFieldContaining(target.javaClass, token) ?: return null
-        return safeGetField(field, target)
-    }
-
-    private fun findFieldValueExact(target: Any, name: String): Any? {
-        val field = XposedHelpers.findFieldIfExists(target.javaClass, name) ?: return null
-        return safeGetField(field, target)
-    }
-
     private fun safeGetField(field: Field, target: Any): Any? {
         return try {
             field.isAccessible = true
@@ -605,11 +660,12 @@ object GameDashboardRecordHook {
         }
     }
 
-    private fun findFirstSpinner(root: View): Spinner? {
+    private fun findFirstSpinner(root: View, preferVisible: Boolean): Spinner? {
+        if (preferVisible && root.visibility != View.VISIBLE) return null
         if (root is Spinner) return root
         if (root is ViewGroup) {
             for (i in 0 until root.childCount) {
-                val found = findFirstSpinner(root.getChildAt(i))
+                val found = findFirstSpinner(root.getChildAt(i), preferVisible)
                 if (found != null) return found
             }
         }
@@ -703,7 +759,7 @@ object GameDashboardRecordHook {
 
     /**
      * Synchronizes both mPackageName and mUid on MediaProjectionPermissionActivity with
-     * the exact ApplicationInfo.uid of com.google.android.gms.
+     * the exact ApplicationInfo.uid of com.google.android.gms when fields are present.
      */
     private fun syncActivityFieldsToGms(activity: Activity, resolvedInfo: ApplicationInfo?) {
         try {
@@ -713,7 +769,9 @@ object GameDashboardRecordHook {
                 pkgField.set(activity, GMS_PACKAGE)
             }
             val uidField = XposedHelpers.findFieldIfExists(activity.javaClass, "mUid")
-            if (uidField != null && isIntType(uidField.type)) {
+            if (uidField != null &&
+                (uidField.type == Int::class.javaPrimitiveType || uidField.type == Int::class.javaObjectType)
+            ) {
                 uidField.setInt(activity, gmsInfo.uid)
             }
         } catch (t: Throwable) {

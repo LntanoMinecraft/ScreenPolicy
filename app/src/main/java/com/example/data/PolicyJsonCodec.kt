@@ -4,6 +4,10 @@ import com.example.model.AppPolicy
 import com.example.model.GlobalPolicyConfig
 import org.json.JSONObject
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 /**
  * Pure org.json codec shared between the app UI (SAF import/export, SharedPreferences)
  * and the system_server / SystemUI runtime cache.
@@ -22,6 +26,11 @@ object PolicyJsonCodec {
     private const val FIELD_BLOCK_DETECT = "blockCaptureDetect"
 
     private const val SCHEMA_VERSION = 2
+
+    fun defaultBackupFileName(nowMillis: Long = System.currentTimeMillis()): String {
+        val dateStamp = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(nowMillis))
+        return "ScreenPolicy-backup-$dateStamp.json"
+    }
 
     fun encode(config: GlobalPolicyConfig, prettyIndent: Int = 0): String {
         val root = JSONObject().apply {
@@ -85,5 +94,79 @@ object PolicyJsonCodec {
             verboseLogging = verboseLogging,
             appPolicies = result,
         )
+    }
+
+    /**
+     * Strictly validates an imported backup JSON file against the ScreenPolicy schema.
+     * Throws IllegalArgumentException on corrupted JSON, unsupported version, missing required
+     * sections, or mismatched field types so existing user configuration is never overwritten.
+     */
+    fun decodeBackupStrict(rawJson: String?): GlobalPolicyConfig {
+        val trimmed = rawJson?.trim().orEmpty()
+        if (trimmed.isEmpty() || !trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            throw IllegalArgumentException("Backup file is not a valid JSON object")
+        }
+
+        val root = try {
+            JSONObject(trimmed)
+        } catch (t: Throwable) {
+            throw IllegalArgumentException("Malformed JSON syntax", t)
+        }
+
+        val rawVersion = root.opt(FIELD_VERSION)
+        val version = when (rawVersion) {
+            is Int -> rawVersion
+            is Long -> rawVersion.toInt()
+            else -> throw IllegalArgumentException("Missing or invalid schema version")
+        }
+        if (version !in 1..SCHEMA_VERSION) {
+            throw IllegalArgumentException("Unsupported schema version: $version")
+        }
+
+        val rawApps = root.opt(FIELD_APPS)
+        val appsObj = rawApps as? JSONObject
+            ?: throw IllegalArgumentException("Missing or invalid 'apps' object")
+
+        val fixGameDashboard = readStrictBoolean(root, FIELD_FIX_GAME_DASHBOARD, defaultValue = true)
+        val autoConfirmGameDashboard =
+            readStrictBoolean(root, FIELD_AUTO_CONFIRM_GAME_DASHBOARD, defaultValue = false)
+        val verboseLogging = readStrictBoolean(root, FIELD_VERBOSE_LOGGING, defaultValue = false)
+
+        val result = linkedMapOf<String, AppPolicy>()
+        val keys = appsObj.keys()
+        while (keys.hasNext()) {
+            val rawPkg = keys.next()
+            val pkg = rawPkg.trim()
+            if (pkg.isEmpty() || !pkg.contains('.') || pkg.any { it.isWhitespace() }) {
+                throw IllegalArgumentException("Invalid package key: $rawPkg")
+            }
+            val item = appsObj.opt(rawPkg) as? JSONObject
+                ?: throw IllegalArgumentException("App entry for $pkg must be a JSON object")
+
+            val legacySecure = readStrictBoolean(item, FIELD_LEGACY_DISABLE_SECURE, defaultValue = false)
+            val policy = AppPolicy(
+                allowScreenshot = readStrictBoolean(item, FIELD_ALLOW_SCREENSHOT, defaultValue = legacySecure),
+                allowScreenRecord = readStrictBoolean(item, FIELD_ALLOW_SCREEN_RECORD, defaultValue = legacySecure),
+                allowAudioCapture = readStrictBoolean(item, FIELD_ALLOW_AUDIO, defaultValue = false),
+                blockCaptureDetect = readStrictBoolean(item, FIELD_BLOCK_DETECT, defaultValue = false),
+            )
+            if (policy.hasAnyEnabled) {
+                result[pkg] = policy
+            }
+        }
+
+        return GlobalPolicyConfig(
+            fixGameDashboardRecord = fixGameDashboard,
+            autoConfirmGameDashboardRecord = autoConfirmGameDashboard,
+            verboseLogging = verboseLogging,
+            appPolicies = result,
+        )
+    }
+
+    private fun readStrictBoolean(obj: JSONObject, key: String, defaultValue: Boolean): Boolean {
+        if (!obj.has(key) || obj.isNull(key)) return defaultValue
+        val value = obj.opt(key)
+        return value as? Boolean
+            ?: throw IllegalArgumentException("Field '$key' must be a boolean")
     }
 }

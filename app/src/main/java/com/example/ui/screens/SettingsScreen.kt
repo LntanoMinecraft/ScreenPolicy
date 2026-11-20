@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
 import com.example.R
+import com.example.data.PolicyJsonCodec
 import com.example.model.AccentPalette
 import com.example.model.AppLanguage
 import com.example.model.ThemeMode
@@ -224,7 +225,7 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_export_title),
                     subtitle = stringResource(R.string.settings_export_desc),
                     leadingIcon = Icons.Outlined.Upload,
-                    onClick = { exportLauncher.launch("screenpolicy_allowlist.json") },
+                    onClick = { exportLauncher.launch(PolicyJsonCodec.defaultBackupFileName()) },
                     shape = expressiveGroupItemShape(0, 2),
                     tag = "action_export_json",
                 )
@@ -234,7 +235,7 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_import_title),
                     subtitle = stringResource(R.string.settings_import_desc),
                     leadingIcon = Icons.Outlined.Download,
-                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/json", "text/plain")) },
                     shape = expressiveGroupItemShape(1, 2),
                     tag = "action_import_json",
                 )

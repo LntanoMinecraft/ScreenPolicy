@@ -195,10 +195,15 @@ class PolicyRepository(private val context: Context) {
     suspend fun importConfigFromUri(uri: Uri): Result<GlobalPolicyConfig> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val maxBytes = 2 * 1024 * 1024
                 val text = appContext.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).readText()
+                    val bytes = stream.readNBytes(maxBytes + 1)
+                    if (bytes.size > maxBytes) {
+                        throw IllegalArgumentException("Backup file exceeds maximum supported size")
+                    }
+                    bytes.toString(Charsets.UTF_8)
                 } ?: error("Input stream unavailable")
-                PolicyJsonCodec.decode(text)
+                PolicyJsonCodec.decodeBackupStrict(text)
             }
         }
 }

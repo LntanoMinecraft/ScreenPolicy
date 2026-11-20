@@ -30,8 +30,8 @@
     <string name="policy_audio_capture_desc">Allow internal app audio capture</string>
     <string name="policy_capture_detect_title">Capture detection</string>
     <string name="policy_capture_detect_desc">Suppress screenshot and recording callbacks</string>
-    <string name="policy_game_dashboard_title">Fix Game Dashboard recording</string>
-    <string name="policy_game_dashboard_desc">Fix Game Dashboard projection permission error</string>
+    <string name="policy_game_dashboard_title">Game Dashboard high-quality recording</string>
+    <string name="policy_game_dashboard_desc">Fix Game Dashboard auth; high-bitrate recording creates larger files</string>
     <string name="policy_game_dashboard_auto_confirm_title">Auto-confirm Game Dashboard</string>
     <string name="policy_game_dashboard_auto_confirm_desc">Skip capture dialog and record entire screen</string>
 
@@ -92,14 +92,14 @@
     <string name="palette_rose_coral">Rose Coral</string>
     <string name="palette_slate_graphite">Graphite</string>
     <string name="settings_group_backup">Configuration</string>
-    <string name="settings_export_title">Export allowlist</string>
-    <string name="settings_export_desc">Save as JSON file</string>
-    <string name="settings_import_title">Import allowlist</string>
-    <string name="settings_import_desc">Restore from JSON file</string>
-    <string name="snackbar_export_success">Allowlist exported</string>
+    <string name="settings_export_title">Export config</string>
+    <string name="settings_export_desc">Back up allowlist and global policies as JSON</string>
+    <string name="settings_import_title">Import config</string>
+    <string name="settings_import_desc">Restore from a JSON backup file</string>
+    <string name="snackbar_export_success">Config exported</string>
     <string name="snackbar_export_failed">Export failed</string>
-    <string name="snackbar_import_success">Imported %1$d app policies</string>
-    <string name="snackbar_import_failed">Invalid JSON format</string>
+    <string name="snackbar_import_success">Config restored (%1$d apps)</string>
+    <string name="snackbar_import_failed">Invalid backup file; current config unchanged</string>
     <string name="settings_group_about">About</string>
     <string name="settings_about_entry_title">About ScreenPolicy</string>
     <string name="about_screen_title">About</string>

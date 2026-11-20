@@ -239,28 +239,160 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `game dashboard auto-confirm invokes entire-screen grant and degrades silently on unknown methods`() {
-        class FakeGrantActivity : android.app.Activity() {
-            var grantedMode: Int = -1
-            @Suppress("unused")
-            private fun grantMediaProjectionPermission(screenShareMode: Int) {
-                grantedMode = screenShareMode
+    fun `r8-immune auto-confirm finds obfuscated dialog by type, switches spinner to entire screen, and clicks confirm`() {
+        val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java)
+            .create()
+            .resume()
+            .get()
+
+        var selectedIdx = -1
+        var positiveClicked = false
+
+        val spinner = android.widget.Spinner(activity).apply {
+            adapter = android.widget.ArrayAdapter(
+                activity,
+                android.R.layout.simple_spinner_item,
+                listOf("单个应用", "整个屏幕"),
+            )
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?,
+                    view: android.view.View?,
+                    position: Int,
+                    id: Long,
+                ) {
+                    selectedIdx = position
+                }
+
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
             }
         }
 
-        class FakeChangedSignatureActivity : android.app.Activity()
+        val dialog = android.app.AlertDialog.Builder(activity)
+            .setView(spinner)
+            .setPositiveButton("开始") { _, _ -> positiveClicked = true }
+            .setNegativeButton("取消", null)
+            .create()
+        dialog.show()
 
-        val fakeGrant = FakeGrantActivity()
-        val okResult = com.example.hook.GameDashboardRecordHook.tryAutoConfirmEntireScreen(fakeGrant)
-        assertTrue(okResult.succeeded)
-        assertEquals(
-            com.example.hook.GameDashboardRecordHook.SCREEN_SHARE_MODE_ENTIRE_SCREEN,
-            fakeGrant.grantedMode,
+        // Obfuscated field name ("a") holding the showing dialog to simulate R8-minified SystemUI
+        class ObfuscatedPermissionActivity : android.app.Activity() {
+            @Suppress("unused")
+            private val a: android.app.Dialog = dialog
+        }
+
+        val obfuscatedActivity = ObfuscatedPermissionActivity()
+        val lookup = com.example.hook.GameDashboardRecordHook.findDialogByType(obfuscatedActivity)
+        assertEquals(dialog, lookup.showingDialog)
+
+        val step2 = com.example.hook.GameDashboardRecordHook.selectEntireScreenOptionInDialog(dialog)
+        assertTrue(step2.succeeded)
+        assertEquals(1, spinner.selectedItemPosition)
+        assertEquals(1, selectedIdx)
+
+        val step3 = com.example.hook.GameDashboardRecordHook.clickConfirmButtonInDialog(dialog)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertTrue(step3.succeeded)
+        assertTrue(positiveClicked)
+
+        dialog.dismiss()
+    }
+
+    @Test
+    fun `r8-immune auto-confirm handles custom button layout, English labels, fallback index, and silent degradation`() {
+        val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java)
+            .create()
+            .resume()
+            .get()
+
+        var customStartClicked = false
+        val container = android.widget.LinearLayout(activity)
+        val spinner = android.widget.Spinner(activity).apply {
+            adapter = android.widget.ArrayAdapter(
+                activity,
+                android.R.layout.simple_spinner_item,
+                listOf("Single app", "Entire screen"),
+            )
+        }
+        val cancelBtn = android.widget.Button(activity).apply {
+            text = "Cancel"
+        }
+        val startBtn = android.widget.Button(activity).apply {
+            text = "Start"
+            setOnClickListener { customStartClicked = true }
+        }
+        container.addView(spinner)
+        container.addView(cancelBtn)
+        container.addView(startBtn)
+
+        val customDialog = android.app.Dialog(activity).apply {
+            setContentView(container)
+        }
+        customDialog.show()
+
+        val step2 = com.example.hook.GameDashboardRecordHook.selectEntireScreenOptionInDialog(customDialog)
+        assertTrue(step2.succeeded)
+        assertEquals(1, spinner.selectedItemPosition)
+
+        val step3 = com.example.hook.GameDashboardRecordHook.clickConfirmButtonInDialog(customDialog)
+        assertTrue(step3.succeeded)
+        assertTrue(customStartClicked)
+        customDialog.dismiss()
+
+        // Silent degradation when activity has no Dialog field
+        val emptyActivity = android.app.Activity()
+        val missingLookup = com.example.hook.GameDashboardRecordHook.findDialogByType(emptyActivity)
+        assertFalse(missingLookup.anyDialogFound)
+        assertEquals(null, missingLookup.showingDialog)
+        assertFalse(emptyActivity.isFinishing)
+
+        // Verify updated high-quality recording bilingual copy exists
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertTrue(context.getString(R.string.policy_game_dashboard_title).isNotBlank())
+        assertTrue(context.getString(R.string.policy_game_dashboard_desc).isNotBlank())
+        assertTrue(com.example.hook.GameDashboardRecordHook.matchesConfirmButtonText("立即开始"))
+        assertTrue(com.example.hook.GameDashboardRecordHook.matchesConfirmButtonText("Start"))
+        assertFalse(com.example.hook.GameDashboardRecordHook.matchesConfirmButtonText("Cancel"))
+        assertFalse(com.example.hook.GameDashboardRecordHook.matchesConfirmButtonText("取消"))
+    }
+
+    @Test
+    fun `backup codec generates dated filename and strictly validates imported JSON schema`() {
+        val fileName = PolicyJsonCodec.defaultBackupFileName()
+        assertTrue(Regex("^ScreenPolicy-backup-\\d{8}\\.json$").matches(fileName))
+
+        val original = GlobalPolicyConfig(
+            fixGameDashboardRecord = true,
+            autoConfirmGameDashboardRecord = true,
+            verboseLogging = false,
+            appPolicies = mapOf(
+                "com.demo.bank" to AppPolicy(
+                    allowScreenshot = true,
+                    allowScreenRecord = true,
+                    allowAudioCapture = false,
+                    blockCaptureDetect = true,
+                ),
+            ),
         )
+        val exported = PolicyJsonCodec.encode(original, prettyIndent = 2)
+        val restored = PolicyJsonCodec.decodeBackupStrict(exported)
+        assertEquals(original, restored)
 
-        val fakeDegraded = FakeChangedSignatureActivity()
-        val degradedResult = com.example.hook.GameDashboardRecordHook.tryAutoConfirmEntireScreen(fakeDegraded)
-        assertFalse(degradedResult.succeeded)
-        assertFalse(fakeDegraded.isFinishing)
+        val invalidSamples = listOf(
+            "",
+            "not json at all",
+            "{}",
+            """{"hello":"world"}""",
+            """{"version":99,"apps":{}}""",
+            """{"version":2,"apps":[]}""",
+            """{"version":2,"fixGameDashboardRecord":"yes","apps":{}}""",
+            """{"version":2,"apps":{"invalid_pkg_no_dot":{"allowScreenshot":true}}}""",
+            """{"version":2,"apps":{"com.demo.app":"not_an_object"}}""",
+            """{"version":2,"apps":{"com.demo.app":{"allowScreenshot":"true"}}}""",
+        )
+        for (sample in invalidSamples) {
+            val failed = runCatching { PolicyJsonCodec.decodeBackupStrict(sample) }.isFailure
+            assertTrue("Expected schema rejection for: $sample", failed)
+        }
     }
 }
