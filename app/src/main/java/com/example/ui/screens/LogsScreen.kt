@@ -50,6 +50,7 @@ import com.example.model.LogEntry
 import com.example.model.LogLevel
 import com.example.ui.MainUiState
 import com.example.ui.theme.JetBrainsMonoFamily
+import com.example.ui.theme.TabularNumericFeature
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -142,8 +143,11 @@ fun LogsScreen(
                 selected = !uiState.logsOnlyErrors,
                 onClick = { onOnlyErrorsChange(false) },
                 label = { Text(stringResource(R.string.logs_filter_all)) },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = null,
                 colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                     selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
@@ -153,8 +157,11 @@ fun LogsScreen(
                 selected = uiState.logsOnlyErrors,
                 onClick = { onOnlyErrorsChange(true) },
                 label = { Text(stringResource(R.string.logs_filter_errors)) },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = null,
                 colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
                     selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
                 ),
@@ -190,9 +197,8 @@ fun LogsScreen(
             }
         } else {
             Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                tonalElevation = 1.dp,
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp)
@@ -262,6 +268,7 @@ private fun MonospaceLogItem(
                 text = formattedTime,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = JetBrainsMonoFamily,
+                    fontFeatureSettings = TabularNumericFeature,
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -85,8 +85,11 @@ enum class ThemeMode(val key: String) {
 enum class AccentPalette(val key: String) {
     SLATE_TEAL("slate_teal"),
     OCEAN_BLUE("ocean_blue"),
+    INDIGO_IRIS("indigo_iris"),
     FOREST_GREEN("forest_green"),
-    WARM_AMBER("warm_amber");
+    WARM_AMBER("warm_amber"),
+    ROSE_CORAL("rose_coral"),
+    SLATE_GRAPHITE("slate_graphite");
 
     companion object {
         fun fromKey(key: String?): AccentPalette =

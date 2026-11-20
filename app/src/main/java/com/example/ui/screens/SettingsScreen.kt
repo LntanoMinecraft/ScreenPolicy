@@ -4,35 +4,39 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,10 +53,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
@@ -66,6 +74,7 @@ import com.example.ui.components.ExpressiveSwitchRow
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.expressiveGroupItemShape
 import com.example.ui.theme.JetBrainsMonoFamily
+import com.example.ui.theme.TabularNumericFeature
 import com.example.ui.theme.previewColorsForPalette
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -225,7 +234,9 @@ fun SettingsScreen(
                             BuildConfig.VERSION_NAME,
                             BuildConfig.VERSION_CODE,
                         ),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontFeatureSettings = TabularNumericFeature,
+                        ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
@@ -343,9 +354,17 @@ private fun PalettePickerCard(
     val items = listOf(
         AccentPalette.SLATE_TEAL to stringResource(R.string.palette_slate_teal),
         AccentPalette.OCEAN_BLUE to stringResource(R.string.palette_ocean_blue),
+        AccentPalette.INDIGO_IRIS to stringResource(R.string.palette_indigo_iris),
         AccentPalette.FOREST_GREEN to stringResource(R.string.palette_forest_green),
         AccentPalette.WARM_AMBER to stringResource(R.string.palette_warm_amber),
+        AccentPalette.ROSE_CORAL to stringResource(R.string.palette_rose_coral),
+        AccentPalette.SLATE_GRAPHITE to stringResource(R.string.palette_slate_graphite),
     )
+    val activeLabel = if (isDynamicActive) {
+        stringResource(R.string.settings_palette_dynamic_hint)
+    } else {
+        items.firstOrNull { it.first == selected }?.second.orEmpty()
+    }
 
     Surface(
         shape = shape,
@@ -355,95 +374,160 @@ private fun PalettePickerCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = stringResource(R.string.settings_palette_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items.forEach { (palette, label) ->
-                    val isSelected = !isDynamicActive && selected == palette
-                    val preview = previewColorsForPalette(palette)
-                    val scale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.03f else 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium,
-                        ),
-                        label = "palette_scale",
+                Text(
+                    text = stringResource(R.string.settings_palette_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = activeLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
                     )
+                }
+            }
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .weight(1f)
-                            .scale(scale)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (isSelected) {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                }
-                            )
-                            .border(
-                                width = if (isSelected) 1.5.dp else 0.dp,
-                                color = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                                shape = RoundedCornerShape(16.dp),
-                            )
-                            .clickable { onSelect(palette) }
-                            .heightIn(min = 76.dp)
-                            .padding(vertical = 10.dp, horizontal = 6.dp)
-                            .testTag("palette_${palette.key}"),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(preview.primary),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .clip(CircleShape)
-                                        .background(preview.container),
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val fitsSingleRow = maxWidth >= 336.dp
+                val rowModifier = if (fitsSingleRow) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                }
+
+                Row(
+                    modifier = rowModifier,
+                    horizontalArrangement = if (fitsSingleRow) {
+                        Arrangement.SpaceBetween
+                    } else {
+                        Arrangement.spacedBy(6.dp)
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    items.forEach { (palette, label) ->
+                        CircularPaletteSwatch(
+                            palette = palette,
+                            label = label,
+                            isSelected = !isDynamicActive && selected == palette,
+                            onClick = { onSelect(palette) },
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CircularPaletteSwatch(
+    palette: AccentPalette,
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val preview = previewColorsForPalette(palette)
+    val outerScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.06f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = 0.62f,
+            stiffness = 380f,
+        ),
+        label = "swatch_scale_${palette.key}",
+    )
+    val ringColor by animateColorAsState(
+        targetValue = if (isSelected) preview.primary else Color.Transparent,
+        animationSpec = spring(
+            dampingRatio = 0.72f,
+            stiffness = 380f,
+        ),
+        label = "swatch_ring_${palette.key}",
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .semantics {
+                contentDescription = label
+                this.selected = isSelected
+            }
+            .clickable(
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .testTag("palette_${palette.key}"),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .scale(outerScale)
+                .clip(CircleShape)
+                .border(
+                    width = 2.5.dp,
+                    color = ringColor,
+                    shape = CircleShape,
+                )
+                .padding(4.dp),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(preview.primary),
+            ) {
+                AnimatedVisibility(
+                    visible = !isSelected,
+                    enter = fadeIn(animationSpec = spring(stiffness = 400f)),
+                    exit = fadeOut(animationSpec = spring(stiffness = 500f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(preview.container.copy(alpha = 0.85f)),
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = isSelected,
+                    enter = scaleIn(
+                        initialScale = 0.45f,
+                        animationSpec = spring(
+                            dampingRatio = 0.52f,
+                            stiffness = 420f,
+                        ),
+                    ) + fadeIn(animationSpec = spring(stiffness = 420f)),
+                    exit = scaleOut(
+                        targetScale = 0.5f,
+                        animationSpec = spring(stiffness = 480f),
+                    ) + fadeOut(animationSpec = spring(stiffness = 480f)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }

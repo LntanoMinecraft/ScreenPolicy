@@ -126,7 +126,64 @@ val OceanBlueDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF43474E),
 )
 
-// 3. Forest Green (森绿)
+// 3. Indigo Iris (靛紫)
+val IndigoIrisLightColorScheme = lightColorScheme(
+    primary = Color(0xFF4B56B6),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE0E0FF),
+    onPrimaryContainer = Color(0xFF000666),
+    secondary = Color(0xFF5C5D72),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE1E0F9),
+    onSecondaryContainer = Color(0xFF191A2C),
+    tertiary = Color(0xFF78536B),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFD8EE),
+    onTertiaryContainer = Color(0xFF2E1126),
+    background = Color(0xFFFCF8FF),
+    onBackground = Color(0xFF1B1B21),
+    surface = Color(0xFFFCF8FF),
+    onSurface = Color(0xFF1B1B21),
+    surfaceVariant = Color(0xFFE3E1EC),
+    onSurfaceVariant = Color(0xFF46464F),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF5F2FA),
+    surfaceContainer = Color(0xFFEFECF4),
+    surfaceContainerHigh = Color(0xFFE9E7EF),
+    surfaceContainerHighest = Color(0xFFE4E1E9),
+    outline = Color(0xFF777680),
+    outlineVariant = Color(0xFFC7C5D0),
+)
+
+val IndigoIrisDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFBEC2FF),
+    onPrimary = Color(0xFF1A2585),
+    primaryContainer = Color(0xFF333E9D),
+    onPrimaryContainer = Color(0xFFE0E0FF),
+    secondary = Color(0xFFC5C4DD),
+    onSecondary = Color(0xFF2E2F42),
+    secondaryContainer = Color(0xFF444559),
+    onSecondaryContainer = Color(0xFFE1E0F9),
+    tertiary = Color(0xFFE8B9D5),
+    onTertiary = Color(0xFF46263C),
+    tertiaryContainer = Color(0xFF5E3C53),
+    onTertiaryContainer = Color(0xFFFFD8EE),
+    background = Color(0xFF131318),
+    onBackground = Color(0xFFE4E1E9),
+    surface = Color(0xFF131318),
+    onSurface = Color(0xFFE4E1E9),
+    surfaceVariant = Color(0xFF46464F),
+    onSurfaceVariant = Color(0xFFC7C5D0),
+    surfaceContainerLowest = Color(0xFF0E0E13),
+    surfaceContainerLow = Color(0xFF1B1B21),
+    surfaceContainer = Color(0xFF1F1F25),
+    surfaceContainerHigh = Color(0xFF2A292F),
+    surfaceContainerHighest = Color(0xFF35343A),
+    outline = Color(0xFF91909A),
+    outlineVariant = Color(0xFF46464F),
+)
+
+// 4. Forest Green (森绿)
 val ForestGreenLightColorScheme = lightColorScheme(
     primary = Color(0xFF2B6A45),
     onPrimary = Color(0xFFFFFFFF),
@@ -183,7 +240,7 @@ val ForestGreenDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF414942),
 )
 
-// 4. Warm Amber (暖橙)
+// 5. Warm Amber (暖橙)
 val WarmAmberLightColorScheme = lightColorScheme(
     primary = Color(0xFF9A4522),
     onPrimary = Color(0xFFFFFFFF),
@@ -240,12 +297,129 @@ val WarmAmberDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF53433E),
 )
 
+// 6. Rose Coral (玫红)
+val RoseCoralLightColorScheme = lightColorScheme(
+    primary = Color(0xFFA2385B),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFD9E2),
+    onPrimaryContainer = Color(0xFF3E001A),
+    secondary = Color(0xFF74565E),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFFFD9E2),
+    onSecondaryContainer = Color(0xFF2B151C),
+    tertiary = Color(0xFF7C5635),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFDCC1),
+    onTertiaryContainer = Color(0xFF2E1500),
+    background = Color(0xFFFFF8F8),
+    onBackground = Color(0xFF22191B),
+    surface = Color(0xFFFFF8F8),
+    onSurface = Color(0xFF22191B),
+    surfaceVariant = Color(0xFFF3DDE1),
+    onSurfaceVariant = Color(0xFF514346),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFFF0F2),
+    surfaceContainer = Color(0xFFFAEAEF),
+    surfaceContainerHigh = Color(0xFFF4E4E9),
+    surfaceContainerHighest = Color(0xFFEFDFE3),
+    outline = Color(0xFF847376),
+    outlineVariant = Color(0xFFD6C2C6),
+)
+
+val RoseCoralDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFFFB0C7),
+    onPrimary = Color(0xFF64062E),
+    primaryContainer = Color(0xFF832044),
+    onPrimaryContainer = Color(0xFFFFD9E2),
+    secondary = Color(0xFFE3BDC6),
+    onSecondary = Color(0xFF422931),
+    secondaryContainer = Color(0xFF5B3F47),
+    onSecondaryContainer = Color(0xFFFFD9E2),
+    tertiary = Color(0xFFEFBD94),
+    onTertiary = Color(0xFF47290C),
+    tertiaryContainer = Color(0xFF613F20),
+    onTertiaryContainer = Color(0xFFFFDCC1),
+    background = Color(0xFF191113),
+    onBackground = Color(0xFFEFDFE3),
+    surface = Color(0xFF191113),
+    onSurface = Color(0xFFEFDFE3),
+    surfaceVariant = Color(0xFF514346),
+    onSurfaceVariant = Color(0xFFD6C2C6),
+    surfaceContainerLowest = Color(0xFF140C0E),
+    surfaceContainerLow = Color(0xFF22191B),
+    surfaceContainer = Color(0xFF261D1F),
+    surfaceContainerHigh = Color(0xFF31282A),
+    surfaceContainerHighest = Color(0xFF3C3235),
+    outline = Color(0xFF9E8C90),
+    outlineVariant = Color(0xFF514346),
+)
+
+// 7. Slate Graphite (石墨)
+val SlateGraphiteLightColorScheme = lightColorScheme(
+    primary = Color(0xFF4A5D6A),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD0E5F4),
+    onPrimaryContainer = Color(0xFF071E2A),
+    secondary = Color(0xFF546069),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD8E4EF),
+    onSecondaryContainer = Color(0xFF111D25),
+    tertiary = Color(0xFF645A76),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFEADDFF),
+    onTertiaryContainer = Color(0xFF201730),
+    background = Color(0xFFF7F9FB),
+    onBackground = Color(0xFF181C1F),
+    surface = Color(0xFFF7F9FB),
+    onSurface = Color(0xFF181C1F),
+    surfaceVariant = Color(0xFFDFE3E8),
+    onSurfaceVariant = Color(0xFF42474C),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF1F4F7),
+    surfaceContainer = Color(0xFFEBEEF1),
+    surfaceContainerHigh = Color(0xFFE5E8EB),
+    surfaceContainerHighest = Color(0xFFE0E3E6),
+    outline = Color(0xFF72787D),
+    outlineVariant = Color(0xFFC2C7CC),
+)
+
+val SlateGraphiteDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFB3C9D8),
+    onPrimary = Color(0xFF1D333F),
+    primaryContainer = Color(0xFF334956),
+    onPrimaryContainer = Color(0xFFD0E5F4),
+    secondary = Color(0xFFBCC8D3),
+    onSecondary = Color(0xFF26323A),
+    secondaryContainer = Color(0xFF3C4851),
+    onSecondaryContainer = Color(0xFFD8E4EF),
+    tertiary = Color(0xFFCFC1E2),
+    onTertiary = Color(0xFF352C46),
+    tertiaryContainer = Color(0xFF4C425E),
+    onTertiaryContainer = Color(0xFFEADDFF),
+    background = Color(0xFF101417),
+    onBackground = Color(0xFFE0E3E6),
+    surface = Color(0xFF101417),
+    onSurface = Color(0xFFE0E3E6),
+    surfaceVariant = Color(0xFF42474C),
+    onSurfaceVariant = Color(0xFFC2C7CC),
+    surfaceContainerLowest = Color(0xFF0B0F12),
+    surfaceContainerLow = Color(0xFF181C1F),
+    surfaceContainer = Color(0xFF1C2023),
+    surfaceContainerHigh = Color(0xFF272B2E),
+    surfaceContainerHighest = Color(0xFF323639),
+    outline = Color(0xFF8C9196),
+    outlineVariant = Color(0xFF42474C),
+)
+
 fun colorSchemeForPalette(palette: AccentPalette, darkTheme: Boolean): ColorScheme {
     return when (palette) {
         AccentPalette.SLATE_TEAL -> if (darkTheme) SlateTealDarkColorScheme else SlateTealLightColorScheme
         AccentPalette.OCEAN_BLUE -> if (darkTheme) OceanBlueDarkColorScheme else OceanBlueLightColorScheme
+        AccentPalette.INDIGO_IRIS -> if (darkTheme) IndigoIrisDarkColorScheme else IndigoIrisLightColorScheme
         AccentPalette.FOREST_GREEN -> if (darkTheme) ForestGreenDarkColorScheme else ForestGreenLightColorScheme
         AccentPalette.WARM_AMBER -> if (darkTheme) WarmAmberDarkColorScheme else WarmAmberLightColorScheme
+        AccentPalette.ROSE_CORAL -> if (darkTheme) RoseCoralDarkColorScheme else RoseCoralLightColorScheme
+        AccentPalette.SLATE_GRAPHITE -> if (darkTheme) SlateGraphiteDarkColorScheme else SlateGraphiteLightColorScheme
     }
 }
 
@@ -261,6 +435,11 @@ fun previewColorsForPalette(palette: AccentPalette): PalettePreviewColors {
             secondary = Color(0xFF535F70),
             container = Color(0xFFD1E4FF),
         )
+        AccentPalette.INDIGO_IRIS -> PalettePreviewColors(
+            primary = Color(0xFF4B56B6),
+            secondary = Color(0xFF5C5D72),
+            container = Color(0xFFE0E0FF),
+        )
         AccentPalette.FOREST_GREEN -> PalettePreviewColors(
             primary = Color(0xFF2B6A45),
             secondary = Color(0xFF4F6354),
@@ -270,6 +449,16 @@ fun previewColorsForPalette(palette: AccentPalette): PalettePreviewColors {
             primary = Color(0xFF9A4522),
             secondary = Color(0xFF77574B),
             container = Color(0xFFFFDBCE),
+        )
+        AccentPalette.ROSE_CORAL -> PalettePreviewColors(
+            primary = Color(0xFFA2385B),
+            secondary = Color(0xFF74565E),
+            container = Color(0xFFFFD9E2),
+        )
+        AccentPalette.SLATE_GRAPHITE -> PalettePreviewColors(
+            primary = Color(0xFF4A5D6A),
+            secondary = Color(0xFF546069),
+            container = Color(0xFFD0E5F4),
         )
     }
 }

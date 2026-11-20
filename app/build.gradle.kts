@@ -12,7 +12,7 @@ android {
   namespace = "com.example"
   compileSdk = 36
 
-  val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+  val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
   val ciVersionName =
     System.getenv("RELEASE_VERSION")
       ?.trim()
@@ -23,7 +23,7 @@ android {
         ?.take(7)
         ?.takeIf { it.isNotEmpty() }
         ?.let { "dev-$it" }
-      ?: "0.1.0-dev"
+      ?: "2.0"
 
   defaultConfig {
     applicationId = "com.lntano.screenpolicy"

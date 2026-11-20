@@ -81,10 +81,14 @@
     <string name="settings_dynamic_color_title">动态取色</string>
     <string name="settings_dynamic_color_desc">跟随系统壁纸配色</string>
     <string name="settings_palette_title">主题色盘</string>
+    <string name="settings_palette_dynamic_hint">动态取色</string>
     <string name="palette_slate_teal">青灰</string>
     <string name="palette_ocean_blue">海蓝</string>
+    <string name="palette_indigo_iris">靛紫</string>
     <string name="palette_forest_green">森绿</string>
     <string name="palette_warm_amber">暖橙</string>
+    <string name="palette_rose_coral">玫红</string>
+    <string name="palette_slate_graphite">石墨</string>
     <string name="settings_group_backup">配置管理</string>
     <string name="settings_export_title">导出白名单</string>
     <string name="settings_export_desc">保存为 JSON 文件</string>

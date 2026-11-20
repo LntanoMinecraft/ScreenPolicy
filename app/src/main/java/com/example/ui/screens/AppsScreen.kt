@@ -95,7 +95,7 @@ import com.example.ui.MainUiState
 import com.example.ui.components.AppIconAvatar
 import com.example.ui.components.ExpressiveSwitchRow
 import com.example.ui.components.expressiveGroupItemShape
-import com.example.ui.theme.JetBrainsMonoFamily
+import com.example.ui.theme.TabularNumericFeature
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,8 +209,11 @@ fun AppsScreen(
                         selected = uiState.appFilter == AppListFilter.ALL,
                         onClick = { onFilterChange(AppListFilter.ALL) },
                         label = { Text(stringResource(R.string.filter_all)) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = null,
                         colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                             selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         ),
@@ -226,10 +229,18 @@ fun AppsScreen(
                             } else {
                                 stringResource(R.string.filter_configured)
                             }
-                            Text(labelText)
+                            Text(
+                                text = labelText,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontFeatureSettings = TabularNumericFeature,
+                                ),
+                            )
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = null,
                         colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                             selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         ),
@@ -240,8 +251,11 @@ fun AppsScreen(
                         selected = uiState.showSystemApps,
                         onClick = onToggleShowSystemApps,
                         label = { Text(stringResource(R.string.filter_system)) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = null,
                         colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                             selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
                         ),
@@ -395,11 +409,11 @@ private fun ModuleStatusHeroCard(
     }
 
     Surface(
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(28.dp),
         color = containerColor,
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(RoundedCornerShape(28.dp))
             .clickable { expanded = !expanded }
             .testTag("module_status_card"),
     ) {
@@ -443,7 +457,7 @@ private fun ModuleStatusHeroCard(
                             Text(
                                 text = summaryText,
                                 style = MaterialTheme.typography.labelMedium.copy(
-                                    fontFamily = JetBrainsMonoFamily,
+                                    fontFeatureSettings = TabularNumericFeature,
                                 ),
                                 color = contentColor.copy(alpha = 0.84f),
                             )
@@ -568,8 +582,8 @@ private fun ExpressiveSearchBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp),

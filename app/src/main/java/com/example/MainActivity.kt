@@ -7,13 +7,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -26,14 +31,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Settings
@@ -68,6 +76,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.MainUiState
@@ -135,7 +144,8 @@ private fun ScreenPolicyRoot(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
-        val bottomContentPadding = if (useNavRail) 32.dp else 112.dp
+        val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val bottomContentPadding = if (useNavRail) navBarBottom + 32.dp else navBarBottom + 96.dp
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -255,7 +265,7 @@ private fun ScreenPolicyRoot(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .navigationBarsPadding()
-                            .padding(horizontal = 24.dp, vertical = 14.dp),
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
                     )
                 }
             }
@@ -265,8 +275,8 @@ private fun ScreenPolicyRoot(
 
 /**
  * Material Design 3 Expressive Floating Pill Navigation Bar.
- * Floats cleanly above the system gesture bar with translucent tonal surface,
- * soft elevation, and spring-driven active pill indicator & icon micro-scale.
+ * Unselected tabs render as compact icon-only targets; selecting a tab elastically expands it
+ * via spring physics into a secondaryContainer pill revealing both icon and label.
  */
 @Composable
 private fun FloatingExpressiveNavBar(
@@ -274,19 +284,28 @@ private fun FloatingExpressiveNavBar(
     onSelectTab: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val containerSpring = remember {
+        spring<IntSize>(
+            dampingRatio = 0.62f,
+            stiffness = 380f,
+        )
+    }
+
     Surface(
-        shape = RoundedCornerShape(32.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        tonalElevation = 4.dp,
+        shadowElevation = 10.dp,
         border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+            width = 0.75.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
         ),
         modifier = modifier.testTag("floating_nav_bar"),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier
+                .animateContentSize(animationSpec = containerSpring)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -299,8 +318,8 @@ private fun FloatingExpressiveNavBar(
                         Color.Transparent
                     },
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium,
+                        dampingRatio = 0.75f,
+                        stiffness = 380f,
                     ),
                     label = "nav_pill_bg_${tab.route}",
                 )
@@ -310,31 +329,38 @@ private fun FloatingExpressiveNavBar(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    animationSpec = spring(stiffness = 380f),
                     label = "nav_pill_fg_${tab.route}",
                 )
                 val iconScale by animateFloatAsState(
                     targetValue = if (selected) 1.12f else 1.0f,
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = 0.58f,
+                        stiffness = 380f,
                     ),
                     label = "nav_icon_scale_${tab.route}",
+                )
+                val horizontalPadding by animateDpAsState(
+                    targetValue = if (selected) 18.dp else 13.dp,
+                    animationSpec = spring(
+                        dampingRatio = 0.62f,
+                        stiffness = 380f,
+                    ),
+                    label = "nav_item_hpad_${tab.route}",
                 )
 
                 Row(
                     modifier = Modifier
+                        .widthIn(min = 48.dp)
                         .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(CircleShape)
                         .background(indicatorColor)
                         .clickable(
                             role = Role.Tab,
                             onClick = { onSelectTab(tab) },
                         )
-                        .padding(
-                            horizontal = if (selected) 18.dp else 14.dp,
-                            vertical = 10.dp,
-                        )
+                        .animateContentSize(animationSpec = containerSpring)
+                        .padding(horizontal = horizontalPadding, vertical = 12.dp)
                         .testTag("nav_tab_${tab.route}"),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
@@ -347,13 +373,38 @@ private fun FloatingExpressiveNavBar(
                             .size(22.dp)
                             .scale(iconScale),
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(tab.labelRes),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = contentColor,
-                        maxLines = 1,
-                    )
+                    AnimatedVisibility(
+                        visible = selected,
+                        enter = expandHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = 0.62f,
+                                stiffness = 380f,
+                            ),
+                            expandFrom = Alignment.Start,
+                        ) + fadeIn(
+                            animationSpec = spring(stiffness = 500f),
+                        ),
+                        exit = shrinkHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = 0.78f,
+                                stiffness = 440f,
+                            ),
+                            shrinkTowards = Alignment.Start,
+                        ) + fadeOut(
+                            animationSpec = spring(stiffness = 550f),
+                        ),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(tab.labelRes),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = contentColor,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
                 }
             }
         }

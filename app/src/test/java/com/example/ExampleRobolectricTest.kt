@@ -123,4 +123,24 @@ class ExampleRobolectricTest {
 
         TelemetryStore.clearLogs(context)
     }
+
+    @Test
+    fun `seven accent palettes and google sans flex typography are configured properly`() {
+        val palettes = com.example.model.AccentPalette.entries
+        assertEquals(7, palettes.size)
+        palettes.forEach { palette ->
+            assertEquals(palette, com.example.model.AccentPalette.fromKey(palette.key))
+            val light = com.example.ui.theme.colorSchemeForPalette(palette, darkTheme = false)
+            val dark = com.example.ui.theme.colorSchemeForPalette(palette, darkTheme = true)
+            assertTrue(light.primary != dark.primary)
+            val preview = com.example.ui.theme.previewColorsForPalette(palette)
+            assertEquals(light.primary, preview.primary)
+        }
+
+        val typo = com.example.ui.theme.ExpressiveTypography
+        assertEquals(com.example.ui.theme.GoogleSansFlexFamily, typo.headlineSmall.fontFamily)
+        assertEquals(com.example.ui.theme.GoogleSansFlexFamily, typo.titleMedium.fontFamily)
+        assertEquals(com.example.ui.theme.TabularNumericFeature, typo.labelLarge.fontFeatureSettings)
+        assertEquals(com.example.ui.theme.TabularNumericFeature, typo.labelMedium.fontFeatureSettings)
+    }
 }

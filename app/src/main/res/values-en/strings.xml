@@ -81,10 +81,14 @@
     <string name="settings_dynamic_color_title">Dynamic color</string>
     <string name="settings_dynamic_color_desc">Match system wallpaper palette</string>
     <string name="settings_palette_title">Color palette</string>
+    <string name="settings_palette_dynamic_hint">Dynamic</string>
     <string name="palette_slate_teal">Slate Teal</string>
     <string name="palette_ocean_blue">Ocean Blue</string>
+    <string name="palette_indigo_iris">Indigo</string>
     <string name="palette_forest_green">Forest Green</string>
     <string name="palette_warm_amber">Warm Amber</string>
+    <string name="palette_rose_coral">Rose Coral</string>
+    <string name="palette_slate_graphite">Graphite</string>
     <string name="settings_group_backup">Configuration</string>
     <string name="settings_export_title">Export allowlist</string>
     <string name="settings_export_desc">Save as JSON file</string>

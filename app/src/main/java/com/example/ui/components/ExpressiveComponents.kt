@@ -50,10 +50,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * Computes Material 3 Expressive segmented group card corners:
- * outer corners 20.dp, inner adjacent corners 6.dp.
+ * outer corners 26.dp, inner adjacent corners 6.dp.
  */
 fun expressiveGroupItemShape(index: Int, total: Int): Shape {
-    val large = 20.dp
+    val large = 26.dp
     val small = 6.dp
     return when {
         total <= 1 -> RoundedCornerShape(large)
@@ -80,7 +80,7 @@ fun SectionHeader(
 ) {
     Text(
         text = title,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = modifier.padding(start = 12.dp, top = 20.dp, bottom = 8.dp),
     )
