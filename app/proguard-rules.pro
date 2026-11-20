@@ -1,21 +1,27 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ScreenPolicy R8 / ProGuard rules
+# Keep only LSPosed entry point, IPC ContentProvider, and policy serialization models.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# 1. LSPosed module entry point declared in assets/xposed_init
+-keep class com.example.hook.PolicyModuleEntry {
+    public <init>();
+    public void handleLoadPackage(de.robv.android.xposed.callbacks.XC_LoadPackage$LoadPackageParam);
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# 2. UID-verified TelemetryContentProvider declared in AndroidManifest.xml
+-keep class com.example.provider.TelemetryContentProvider {
+    *;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# 3. Allowlist serialization models
+-keep class com.example.model.AppPolicy {
+    *;
+}
+-keep class com.example.model.GlobalPolicyConfig {
+    *;
+}
+
+# 4. Provided compileOnly Xposed API classes exist at runtime in LSPosed
+-dontwarn de.robv.android.xposed.**
+
+# Preserve concise stack trace metadata for Android 17 field diagnostics
+-keepattributes SourceFile,LineNumberTable

@@ -146,7 +146,8 @@ object PolicyCache {
             return cached.packages
         }
         val resolved = try {
-            val atClass = XposedHelpers.findClass("android.app.ActivityThread", null)
+            val atClass = XposedHelpers.findClassIfExists("android.app.ActivityThread", null)
+                ?: return emptyArray()
             val app = XposedHelpers.callStaticMethod(atClass, "currentApplication") as? Application
             val pm: PackageManager? = app?.packageManager
             pm?.getPackagesForUid(uid) ?: emptyArray()

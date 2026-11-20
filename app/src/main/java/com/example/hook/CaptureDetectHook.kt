@@ -9,6 +9,8 @@ import de.robv.android.xposed.XposedHelpers
 /**
  * Android 17 (API 37) system_server hook suppressing screenshot (ScreenCaptureCallback) and
  * screen recording (ScreenRecordingCallback) observer registration for allowlisted packages.
+ *
+ * Uses targeted declaredMethods filtering + XposedBridge.hookMethod (never broad hookAllMethods).
  */
 object CaptureDetectHook {
     private const val TAG = "CaptureDetect"
@@ -21,13 +23,16 @@ object CaptureDetectHook {
         var recordingCount = 0
         val errors = mutableListOf<String>()
 
-        // 1. Suppress ScreenCaptureCallback registration in ActivityTaskManagerService
+        // 1. Suppress ScreenCaptureCallback registration in ActivityTaskManagerService (exact 2-arg)
         try {
-            val atmsClass = XposedHelpers.findClass(CLASS_ATMS, classLoader)
-            screenshotCount += XposedBridge.hookAllMethods(
-                atmsClass,
-                "registerScreenCaptureObserver",
-                object : XC_MethodHook() {
+            val atmsClass = XposedHelpers.findClassIfExists(CLASS_ATMS, classLoader)
+            if (atmsClass != null) {
+                val targets = atmsClass.declaredMethods.filter { method ->
+                    method.name == "registerScreenCaptureObserver" &&
+                        method.parameterCount == 2
+                }.take(1)
+
+                val callback = object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         try {
                             val matchedPkg = PolicyCache.findAllowlistedPackageForUid(
@@ -49,8 +54,15 @@ object CaptureDetectHook {
                             )
                         }
                     }
-                },
-            ).size
+                }
+
+                for (method in targets) {
+                    XposedBridge.hookMethod(method, callback)
+                    screenshotCount++
+                }
+            } else {
+                errors.add("ATMS:ClassNotFound")
+            }
         } catch (t: Throwable) {
             errors.add("ATMS:${t.javaClass.simpleName}")
             DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_screenshot", t)
@@ -60,19 +72,30 @@ object CaptureDetectHook {
         try {
             val wmsClass = XposedHelpers.findClassIfExists(CLASS_WMS, classLoader)
             if (wmsClass != null) {
-                recordingCount += XposedBridge.hookAllMethods(
-                    wmsClass,
-                    "registerScreenRecordingCallback",
-                    createRecordingBlockerHook("WMS.registerScreenRecordingCallback"),
-                ).size
+                val wmsTargets = wmsClass.declaredMethods.filter { method ->
+                    method.name == "registerScreenRecordingCallback" &&
+                        method.parameterCount == 1 &&
+                        method.returnType == Boolean::class.javaPrimitiveType
+                }.take(1)
+                val callback = createRecordingBlockerHook("WMS.registerScreenRecordingCallback")
+                for (method in wmsTargets) {
+                    XposedBridge.hookMethod(method, callback)
+                    recordingCount++
+                }
             }
+
             val controllerClass = XposedHelpers.findClassIfExists(CLASS_RECORDING_CONTROLLER, classLoader)
             if (controllerClass != null) {
-                recordingCount += XposedBridge.hookAllMethods(
-                    controllerClass,
-                    "register",
-                    createRecordingBlockerHook("ScreenRecordingCallbackController.register"),
-                ).size
+                val ctrlTargets = controllerClass.declaredMethods.filter { method ->
+                    method.name == "register" &&
+                        method.parameterCount == 1 &&
+                        method.returnType == Boolean::class.javaPrimitiveType
+                }.take(1)
+                val callback = createRecordingBlockerHook("ScreenRecordingCallbackController.register")
+                for (method in ctrlTargets) {
+                    XposedBridge.hookMethod(method, callback)
+                    recordingCount++
+                }
             }
         } catch (t: Throwable) {
             errors.add("RecordingCb:${t.javaClass.simpleName}")
@@ -97,7 +120,6 @@ object CaptureDetectHook {
                     val matchedPkg = PolicyCache.findAllowlistedPackageForUid(
                         Binder.getCallingUid(),
                     ) { it.blockCaptureDetect } ?: return
-                    // registerScreenRecordingCallback returns boolean (isCurrentlyRecording)
                     param.result = false
                     DualTrackLogger.logHit(
                         scope = PolicyConstants.SCOPE_ANDROID,

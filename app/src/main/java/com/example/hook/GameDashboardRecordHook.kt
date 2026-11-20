@@ -4,80 +4,53 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Bundle
 import com.example.data.PolicyConstants
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import java.lang.reflect.Method
 
 /**
  * Android 17 (API 37) SystemUI hook fixing GMS Game Dashboard screen recording permission failures.
  *
- * Root cause on Android 17:
- * When GMS Game Dashboard (com.google.android.gms) launches MediaProjectionPermissionActivity
- * through android/.service.games.GameSessionTrampolineActivity (realCallingUid=1000),
- * MediaProjectionPermissionActivity.getCallingPackage() resolves to null/empty or fails
- * PackageManager.getApplicationInfo with NameNotFoundException, immediately cancelling the prompt.
- *
- * Fix:
- * Falls back to "com.google.android.gms" AND strictly synchronizes both mPackageName and mUid
- * on the Activity instance with the resolved GMS ApplicationInfo.uid so subsequent
- * IMediaProjectionManager token creation passes UID-to-package verification cleanly.
+ * Performance & Boot Safety Design:
+ * - Mounted exclusively after a 12-second deferred delay in PolicyModuleEntry (zero impact on
+ *   SystemUI's 10-second PROC_START_TIMEOUT window).
+ * - NEVER hooks android.app.ApplicationPackageManager (eliminates ART deoptimization storms).
+ * - Uses exact method signature resolution (no broad XposedBridge.hookAllMethods).
+ * - Interception of getCallingPackage() is gated by a nanosecond ThreadLocal identity check so
+ *   zero work is performed for any other Activity in SystemUI.
  */
 object GameDashboardRecordHook {
     private const val TAG = "GameDashboardFix"
     private const val GMS_PACKAGE = "com.google.android.gms"
     private const val CLASS_MP_PERMISSION_ACTIVITY =
         "com.android.systemui.mediaprojection.permission.MediaProjectionPermissionActivity"
-    private const val CLASS_APP_PACKAGE_MANAGER = "android.app.ApplicationPackageManager"
 
-    private val activePermissionActivity = ThreadLocal<Activity?>()
+    private val activeTrampolineActivity = ThreadLocal<Activity?>()
 
     fun install(classLoader: ClassLoader): Pair<Boolean, String> {
         return try {
-            val activityClass = XposedHelpers.findClass(CLASS_MP_PERMISSION_ACTIVITY, classLoader)
+            val activityClass = XposedHelpers.findClassIfExists(CLASS_MP_PERMISSION_ACTIVITY, classLoader)
+                ?: return false to "Class not found: $CLASS_MP_PERMISSION_ACTIVITY"
 
-            val callingPkgHooks = XposedBridge.hookAllMethods(
-                activityClass,
-                "getCallingPackage",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        try {
-                            if (!PolicyCache.isGameDashboardFixEnabled()) return
-                            val activity = param.thisObject as? Activity ?: return
-                            val original = param.result as? String
-                            if (shouldFallbackToGms(activity, original)) {
-                                param.result = GMS_PACKAGE
-                                syncActivityFieldsToGms(activity, resolvedInfo = null)
-                                DualTrackLogger.logHit(
-                                    scope = PolicyConstants.SCOPE_SYSTEMUI,
-                                    tag = TAG,
-                                    packageName = GMS_PACKAGE,
-                                    action = "getCallingPackage fallback (${original ?: "null"} -> $GMS_PACKAGE)",
-                                )
-                            }
-                        } catch (t: Throwable) {
-                            DualTrackLogger.logError(
-                                PolicyConstants.SCOPE_SYSTEMUI,
-                                TAG,
-                                "getCallingPackage_cb",
-                                t,
-                            )
-                        }
-                    }
-                },
-            )
+            val onCreateMethod = findExactOnCreate(activityClass)
+                ?: return false to "onCreate(Bundle) not found in $CLASS_MP_PERMISSION_ACTIVITY"
 
-            val onCreateHooks = XposedBridge.hookAllMethods(
-                activityClass,
-                "onCreate",
+            XposedBridge.hookMethod(
+                onCreateMethod,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         try {
                             if (!PolicyCache.isGameDashboardFixEnabled()) return
                             val activity = param.thisObject as? Activity ?: return
                             DualTrackLogger.attachContext(activity)
-                            activePermissionActivity.set(activity)
-                            patchActivityIfTrampoline(activity)
+                            val rawCallingPkg = safeOriginalCallingPackage(activity)
+                            if (shouldFallbackToGms(activity, rawCallingPkg)) {
+                                activeTrampolineActivity.set(activity)
+                                syncActivityFieldsToGms(activity, resolvedInfo = null)
+                            }
                         } catch (t: Throwable) {
                             DualTrackLogger.logError(
                                 PolicyConstants.SCOPE_SYSTEMUI,
@@ -90,11 +63,9 @@ object GameDashboardRecordHook {
 
                     override fun afterHookedMethod(param: MethodHookParam) {
                         try {
-                            if (PolicyCache.isGameDashboardFixEnabled()) {
-                                val activity = param.thisObject as? Activity
-                                if (activity != null) {
-                                    ensureGmsUidConsistency(activity)
-                                }
+                            val active = activeTrampolineActivity.get()
+                            if (active != null && active === param.thisObject) {
+                                ensureGmsUidConsistency(active)
                             }
                         } catch (t: Throwable) {
                             DualTrackLogger.logError(
@@ -104,68 +75,80 @@ object GameDashboardRecordHook {
                                 t,
                             )
                         } finally {
-                            activePermissionActivity.remove()
+                            activeTrampolineActivity.remove()
                         }
                     }
                 },
             )
 
-            val appPmHooks = installAppInfoGuard(classLoader)
-
-            val total = callingPkgHooks.size + onCreateHooks.size
-            if (total > 0) {
-                true to "MediaProjectionPermissionActivity (getCallingPackage=${callingPkgHooks.size}, onCreate=${onCreateHooks.size}, pmGuard=$appPmHooks)"
+            // Exact 0-arg getCallingPackage(): prefer declared override on MediaProjectionPermissionActivity,
+            // otherwise attach to exact Activity.getCallingPackage() with instant ThreadLocal identity guard.
+            val callingPkgMethod = findExactGetCallingPackage(activityClass)
+            val callingPkgHooked = if (callingPkgMethod != null) {
+                XposedBridge.hookMethod(
+                    callingPkgMethod,
+                    object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            val active = activeTrampolineActivity.get() ?: return
+                            if (param.thisObject !== active) return
+                            try {
+                                val original = param.result as? String
+                                if (original.isNullOrBlank() || original == "android" || original != GMS_PACKAGE) {
+                                    param.result = GMS_PACKAGE
+                                    syncActivityFieldsToGms(active, resolvedInfo = null)
+                                    DualTrackLogger.logHit(
+                                        scope = PolicyConstants.SCOPE_SYSTEMUI,
+                                        tag = TAG,
+                                        packageName = GMS_PACKAGE,
+                                        action = "getCallingPackage intercepted (${original ?: "null"} -> $GMS_PACKAGE)",
+                                    )
+                                }
+                            } catch (t: Throwable) {
+                                DualTrackLogger.logError(
+                                    PolicyConstants.SCOPE_SYSTEMUI,
+                                    TAG,
+                                    "getCallingPackage_cb",
+                                    t,
+                                )
+                            }
+                        }
+                    },
+                )
+                1
             } else {
-                false to "No target methods matched in $CLASS_MP_PERMISSION_ACTIVITY"
+                0
             }
+
+            true to "MediaProjectionPermissionActivity (onCreate=1, getCallingPackage=$callingPkgHooked)"
         } catch (t: Throwable) {
             DualTrackLogger.logError(PolicyConstants.SCOPE_SYSTEMUI, TAG, "install", t)
             false to "${t.javaClass.simpleName}: ${t.message}"
         }
     }
 
-    private fun installAppInfoGuard(classLoader: ClassLoader): Int {
-        return try {
-            val appPmClass = XposedHelpers.findClass(CLASS_APP_PACKAGE_MANAGER, classLoader)
-            XposedBridge.hookAllMethods(
-                appPmClass,
-                "getApplicationInfo",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val activity = activePermissionActivity.get() ?: return
-                        try {
-                            if (!PolicyCache.isGameDashboardFixEnabled()) return
-                            val thrown = param.throwable
-                            if (thrown !is PackageManager.NameNotFoundException) return
-                            val args = param.args ?: return
-                            if (args.isEmpty()) return
-                            val requestedPkg = args[0] as? String
-                            if (!requestedPkg.isNullOrBlank() && requestedPkg != "android") return
+    private fun findExactOnCreate(activityClass: Class<*>): Method? {
+        return activityClass.declaredMethods.firstOrNull { method ->
+            method.name == "onCreate" &&
+                method.parameterCount == 1 &&
+                method.parameterTypes[0] == Bundle::class.java
+        } ?: XposedHelpers.findMethodExactIfExists(activityClass, "onCreate", Bundle::class.java)
+    }
 
-                            val pm = param.thisObject as? PackageManager ?: return
-                            val gmsInfo = pm.getApplicationInfo(GMS_PACKAGE, 0)
-                            param.throwable = null
-                            param.result = gmsInfo
-                            syncActivityFieldsToGms(activity, resolvedInfo = gmsInfo)
-                            DualTrackLogger.logHit(
-                                scope = PolicyConstants.SCOPE_SYSTEMUI,
-                                tag = TAG,
-                                packageName = GMS_PACKAGE,
-                                action = "getApplicationInfo recovered -> $GMS_PACKAGE (uid=${gmsInfo.uid})",
-                            )
-                        } catch (t: Throwable) {
-                            DualTrackLogger.logError(
-                                PolicyConstants.SCOPE_SYSTEMUI,
-                                TAG,
-                                "getApplicationInfo_guard",
-                                t,
-                            )
-                        }
-                    }
-                },
-            ).size
+    private fun findExactGetCallingPackage(activityClass: Class<*>): Method? {
+        val declared = activityClass.declaredMethods.firstOrNull { method ->
+            method.name == "getCallingPackage" &&
+                method.parameterCount == 0 &&
+                method.returnType == String::class.java
+        }
+        if (declared != null) return declared
+        return XposedHelpers.findMethodExactIfExists(Activity::class.java, "getCallingPackage")
+    }
+
+    private fun safeOriginalCallingPackage(activity: Activity): String? {
+        return try {
+            activity.callingPackage
         } catch (_: Throwable) {
-            0
+            null
         }
     }
 
@@ -209,18 +192,7 @@ object GameDashboardRecordHook {
                 }
             }
         }
-        return activity.callingPackage.isNullOrBlank()
-    }
-
-    private fun patchActivityIfTrampoline(activity: Activity) {
-        try {
-            val pkgField = XposedHelpers.findFieldIfExists(activity.javaClass, "mPackageName")
-            val currentPkg = pkgField?.get(activity) as? String
-            if (shouldFallbackToGms(activity, currentPkg)) {
-                syncActivityFieldsToGms(activity, resolvedInfo = null)
-            }
-        } catch (_: Throwable) {
-        }
+        return safeOriginalCallingPackage(activity).isNullOrBlank()
     }
 
     private fun ensureGmsUidConsistency(activity: Activity) {

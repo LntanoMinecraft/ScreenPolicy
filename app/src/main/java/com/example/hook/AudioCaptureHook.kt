@@ -7,17 +7,16 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.lang.reflect.Field
+import java.lang.reflect.Method
 
 /**
  * Android 17 (API 37) system_server hook for internal audio playback capture (allowAudioCapture).
  *
- * Dual-layer allowlist enforcement:
- * 1. ApplicationInfo flag layer: sets ApplicationInfo.PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE
- *    when PackageInfoUtils generates ApplicationInfo for an allowlisted package.
- * 2. AudioService runtime layer: overrides setAllowedCapturePolicy / getAllowedCapturePolicy to
- *    AudioAttributes.ALLOW_CAPTURE_BY_ALL (1) for allowlisted package UIDs.
- *
- * Strictly avoids touching Bluetooth A2DP, SCO, or voice-call audio routing.
+ * Uses targeted declaredMethods filtering + XposedBridge.hookMethod (never broad hookAllMethods):
+ * 1. Layer 1 (PackageInfoUtils.generateApplicationInfo): hooks only the primary core implementation
+ *    overload(s) returning ApplicationInfo with the highest parameter count (max 2 methods).
+ * 2. Layer 2 (AudioService / PlaybackActivityMonitor): hooks only exact int-signature
+ *    setAllowedCapturePolicy / getAllowedCapturePolicy methods.
  */
 object AudioCaptureHook {
     private const val TAG = "AudioCapture"
@@ -38,59 +37,70 @@ object AudioCaptureHook {
         }
     }
 
-    fun install(classLoader: ClassLoader): Pair<Boolean, String> {
-        var pkgHookCount = 0
-        var audioHookCount = 0
-        val errors = mutableListOf<String>()
+    fun installPackageInfoLayer(classLoader: ClassLoader): Pair<Int, String?> {
+        return try {
+            val pkgInfoUtils = XposedHelpers.findClassIfExists(CLASS_PACKAGE_INFO_UTILS, classLoader)
+                ?: return 0 to "PackageInfoUtils:ClassNotFound"
 
-        // Layer 1: ApplicationInfo.privateFlags
-        try {
-            val pkgInfoUtils = XposedHelpers.findClass(CLASS_PACKAGE_INFO_UTILS, classLoader)
-            val hooks = XposedBridge.hookAllMethods(
-                pkgInfoUtils,
-                "generateApplicationInfo",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        try {
-                            val info = param.result as? ApplicationInfo ?: return
-                            if (!PolicyCache.isAudioCaptureAllowed(info.packageName)) return
-                            val field = privateFlagsField ?: return
-                            val current = field.getInt(info)
-                            if ((current and PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE) == 0) {
-                                field.setInt(info, current or PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE)
-                                DualTrackLogger.logHit(
-                                    scope = PolicyConstants.SCOPE_ANDROID,
-                                    tag = TAG,
-                                    packageName = info.packageName,
-                                    action = "privateFlags+=ALLOW_AUDIO_PLAYBACK_CAPTURE",
-                                )
-                            }
-                        } catch (t: Throwable) {
-                            DualTrackLogger.logError(
-                                PolicyConstants.SCOPE_ANDROID,
-                                TAG,
-                                "generateAppInfo_cb",
-                                t,
+            val targets = selectGenerateAppInfoMethods(pkgInfoUtils)
+            val callback = object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    try {
+                        val info = param.result as? ApplicationInfo ?: return
+                        if (!PolicyCache.isAudioCaptureAllowed(info.packageName)) return
+                        val field = privateFlagsField ?: return
+                        val current = field.getInt(info)
+                        if ((current and PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE) == 0) {
+                            field.setInt(info, current or PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE)
+                            DualTrackLogger.logHit(
+                                scope = PolicyConstants.SCOPE_ANDROID,
+                                tag = TAG,
+                                packageName = info.packageName,
+                                action = "privateFlags+=ALLOW_AUDIO_PLAYBACK_CAPTURE",
                             )
                         }
+                    } catch (t: Throwable) {
+                        DualTrackLogger.logError(
+                            PolicyConstants.SCOPE_ANDROID,
+                            TAG,
+                            "generateAppInfo_cb",
+                            t,
+                        )
                     }
-                },
-            )
-            pkgHookCount = hooks.size
-        } catch (t: Throwable) {
-            errors.add("PackageInfoUtils:${t.javaClass.simpleName}")
-            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_pkg_layer", t)
-        }
+                }
+            }
 
-        // Layer 2: AudioService & PlaybackActivityMonitor capture policy
-        try {
+            var count = 0
+            for (method in targets) {
+                XposedBridge.hookMethod(method, callback)
+                count++
+            }
+            count to null
+        } catch (t: Throwable) {
+            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_pkg_layer", t)
+            0 to "PackageInfoUtils:${t.javaClass.simpleName}"
+        }
+    }
+
+    fun installAudioServiceLayer(classLoader: ClassLoader): Pair<Int, String?> {
+        return try {
+            var audioHookCount = 0
             audioHookCount += hookCapturePolicyClass(classLoader, CLASS_AUDIO_SERVICE)
             audioHookCount += hookCapturePolicyClass(classLoader, CLASS_PLAYBACK_MONITOR)
+            audioHookCount to null
         } catch (t: Throwable) {
-            errors.add("AudioService:${t.javaClass.simpleName}")
             DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_audio_layer", t)
+            0 to "AudioService:${t.javaClass.simpleName}"
         }
+    }
 
+    fun combineResult(
+        pkgResult: Pair<Int, String?>,
+        audioResult: Pair<Int, String?>,
+    ): Pair<Boolean, String> {
+        val pkgHookCount = pkgResult.first
+        val audioHookCount = audioResult.first
+        val errors = listOfNotNull(pkgResult.second, audioResult.second)
         val ok = pkgHookCount > 0 || audioHookCount > 0
         val detail = buildString {
             append("PackageInfoUtils=").append(pkgHookCount)
@@ -102,19 +112,32 @@ object AudioCaptureHook {
         return ok to detail
     }
 
+    private fun selectGenerateAppInfoMethods(pkgInfoUtils: Class<*>): List<Method> {
+        val candidates = pkgInfoUtils.declaredMethods.filter { method ->
+            method.name == "generateApplicationInfo" &&
+                method.returnType == ApplicationInfo::class.java &&
+                method.parameterCount >= 3
+        }
+        // Hook only the deepest core implementation(s) where wrapper overloads funnel through
+        return candidates.sortedByDescending { it.parameterCount }.take(2)
+    }
+
     private fun hookCapturePolicyClass(classLoader: ClassLoader, className: String): Int {
         val targetClass = XposedHelpers.findClassIfExists(className, classLoader) ?: return 0
         var count = 0
 
-        count += XposedBridge.hookAllMethods(
-            targetClass,
-            "setAllowedCapturePolicy",
-            object : XC_MethodHook() {
+        val setTargets = targetClass.declaredMethods.filter { method ->
+            method.name == "setAllowedCapturePolicy" &&
+                method.parameterCount in 1..2 &&
+                method.parameterTypes.all { it == Int::class.javaPrimitiveType }
+        }.take(2)
+
+        if (setTargets.isNotEmpty()) {
+            val setCallback = object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     try {
                         val args = param.args ?: return
                         if (args.isEmpty()) return
-                        // Android 17 signatures: (int policy) or (int uid, int policy)
                         val (uid, policyIndex) = when {
                             args.size >= 2 && args[0] is Int && args[1] is Int ->
                                 (args[0] as Int) to 1
@@ -143,13 +166,22 @@ object AudioCaptureHook {
                         )
                     }
                 }
-            },
-        ).size
+            }
+            for (method in setTargets) {
+                XposedBridge.hookMethod(method, setCallback)
+                count++
+            }
+        }
 
-        count += XposedBridge.hookAllMethods(
-            targetClass,
-            "getAllowedCapturePolicy",
-            object : XC_MethodHook() {
+        val getTargets = targetClass.declaredMethods.filter { method ->
+            method.name == "getAllowedCapturePolicy" &&
+                method.returnType == Int::class.javaPrimitiveType &&
+                method.parameterCount in 0..1 &&
+                method.parameterTypes.all { it == Int::class.javaPrimitiveType }
+        }.take(2)
+
+        if (getTargets.isNotEmpty()) {
+            val getCallback = object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     try {
                         val current = param.result as? Int ?: return
@@ -179,8 +211,12 @@ object AudioCaptureHook {
                         )
                     }
                 }
-            },
-        ).size
+            }
+            for (method in getTargets) {
+                XposedBridge.hookMethod(method, getCallback)
+                count++
+            }
+        }
 
         return count
     }

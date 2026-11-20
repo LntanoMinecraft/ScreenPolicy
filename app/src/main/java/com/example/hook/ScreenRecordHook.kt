@@ -9,10 +9,8 @@ import de.robv.android.xposed.XposedHelpers
 /**
  * Android 17 (API 37) system_server hook for per-window screen recording relief (allowScreenRecord).
  *
- * Strictly per-window allowlist-gated via WindowState.isSecureLocked() only.
- * Display-wide hooks (e.g. DisplayContent.hasSecureWindowOnScreen) are intentionally omitted
- * so split-screen or freeform windows belonging to non-allowlisted banking/payment apps are
- * never collaterally exposed.
+ * Strictly per-window allowlist-gated via the single 0-arg WindowState.isSecureLocked() method.
+ * Uses exact Method lookup + XposedBridge.hookMethod (never broad hookAllMethods).
  */
 object ScreenRecordHook {
     private const val TAG = "ScreenRecord"
@@ -20,10 +18,18 @@ object ScreenRecordHook {
 
     fun install(classLoader: ClassLoader): Pair<Boolean, String> {
         return try {
-            val windowStateClass = XposedHelpers.findClass(CLASS_WINDOW_STATE, classLoader)
-            val hooks = XposedBridge.hookAllMethods(
-                windowStateClass,
-                "isSecureLocked",
+            val windowStateClass = XposedHelpers.findClassIfExists(CLASS_WINDOW_STATE, classLoader)
+                ?: return false to "Class not found: $CLASS_WINDOW_STATE"
+
+            val targetMethod = windowStateClass.declaredMethods.firstOrNull { method ->
+                method.name == "isSecureLocked" &&
+                    method.parameterCount == 0 &&
+                    method.returnType == Boolean::class.javaPrimitiveType
+            } ?: XposedHelpers.findMethodExactIfExists(windowStateClass, "isSecureLocked")
+                ?: return false to "WindowState.isSecureLocked() not found"
+
+            XposedBridge.hookMethod(
+                targetMethod,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         try {
@@ -50,11 +56,7 @@ object ScreenRecordHook {
                 },
             )
 
-            if (hooks.isNotEmpty()) {
-                true to "WindowState.isSecureLocked (${hooks.size})"
-            } else {
-                false to "WindowState.isSecureLocked method not found"
-            }
+            true to "WindowState.isSecureLocked() (1)"
         } catch (t: Throwable) {
             DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install", t)
             false to "${t.javaClass.simpleName}: ${t.message}"

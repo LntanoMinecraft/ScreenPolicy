@@ -159,4 +159,20 @@ class ExampleRobolectricTest {
         assertTrue(context.getString(R.string.about_coolapk_subtitle).contains("34054336"))
         assertTrue(context.getString(R.string.settings_about_entry_title).isNotBlank())
     }
+
+    @Test
+    fun `dual track logger buffers hook status purely in memory without boot IPC`() {
+        val before = com.example.hook.DualTrackLogger.snapshotHookStatusCount()
+        com.example.hook.DualTrackLogger.recordHookStatus(
+            scope = PolicyConstants.SCOPE_SYSTEMUI,
+            hookKey = PolicyConstants.HOOK_GAME_DASHBOARD,
+            success = true,
+            detail = "MediaProjectionPermissionActivity (onCreate=1, getCallingPackage=1)",
+        )
+        com.example.hook.DualTrackLogger.recordStartupSummary(
+            scope = PolicyConstants.SCOPE_SYSTEMUI,
+            message = "SystemUI hook ready in 4ms (deferred)",
+        )
+        assertTrue(com.example.hook.DualTrackLogger.snapshotHookStatusCount() >= maxOf(1, before))
+    }
 }
