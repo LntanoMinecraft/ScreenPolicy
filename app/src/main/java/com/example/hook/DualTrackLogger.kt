@@ -5,9 +5,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.os.UserManager
+import android.util.Log
 import com.example.data.PolicyConstants
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedModule
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
@@ -15,9 +15,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Zero-boot-IPC dual-track telemetry logger for system_server and SystemUI.
+ * Zero-boot-IPC dual-track telemetry logger for system_server and SystemUI (libxposed API 102).
  *
- * - Track 1: Immediately writes concise markers to XposedBridge.log (memory-safe, zero Binder IPC).
+ * - Track 1: Immediately writes concise markers via XposedModule.log(...) (zero Binder IPC).
  * - Track 2: Stores startup mount statuses and timing summaries purely in memory (< 1ms) during
  *   boot, then flushes them asynchronously to TelemetryContentProvider ONLY after a 28-second
  *   boot-stabilization window on a single MIN_PRIORITY daemon thread.
@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   (after 20s) before failing silently — never blocks system threads and never loops infinitely.
  */
 object DualTrackLogger {
+    private const val LOG_TAG = "ScreenPolicy"
     private const val ERROR_THROTTLE_MS = 60_000L
     private const val HIT_THROTTLE_MS = 5_000L
     private const val MAX_PENDING_REPORTS = 48
@@ -63,7 +64,14 @@ object DualTrackLogger {
     private val singleRetryUsed = AtomicBoolean(false)
 
     @Volatile
+    private var moduleRef: XposedModule? = null
+
+    @Volatile
     private var appContextRef: Context? = null
+
+    fun attachModule(module: XposedModule) {
+        moduleRef = module
+    }
 
     fun attachContext(context: Context?) {
         if (context == null) return
@@ -85,7 +93,10 @@ object DualTrackLogger {
             detail = detail,
             timestampMs = nowMs,
         )
-        safeXposedLog("[$scope][$hookKey] mount=${if (success) "OK" else "FAIL"}: $detail")
+        safeModuleLog(
+            priority = if (success) Log.INFO else Log.WARN,
+            line = "[$scope][$hookKey] mount=${if (success) "OK" else "FAIL"}: $detail",
+        )
 
         val extras = Bundle().apply {
             putString(PolicyConstants.EXTRA_SCOPE, scope)
@@ -99,10 +110,9 @@ object DualTrackLogger {
 
     /**
      * Records startup mount timing summary (e.g. "SystemUI hook ready in 4ms (deferred)").
-     * Enqueued after individual hook statuses so it lands at the top of the app's Logs list.
      */
     fun recordStartupSummary(scope: String, message: String) {
-        safeXposedLog("[$scope][Startup] $message")
+        safeModuleLog(Log.INFO, "[$scope][Startup] $message")
         val extras = Bundle().apply {
             putString(PolicyConstants.EXTRA_SCOPE, scope)
             putString(PolicyConstants.EXTRA_LEVEL, "INFO")
@@ -114,7 +124,7 @@ object DualTrackLogger {
     }
 
     /**
-     * Schedules the first ContentProvider flush after boot stabilization (>= 25-30s).
+     * Schedules the first ContentProvider flush after boot stabilization (>= 15-28s).
      * Guarantees zero ContentProvider IPC during Android's 10-second process start window.
      */
     fun scheduleDeferredBootFlush(delayMs: Long = BOOT_IPC_DELAY_MS) {
@@ -142,7 +152,7 @@ object DualTrackLogger {
         errorCooldowns[dedupeKey] = now
 
         val msg = "${throwable.javaClass.simpleName}: ${throwable.message ?: errorKey}"
-        safeXposedLog("[$scope][$tag] ERROR ($errorKey): $msg")
+        safeModuleLog(Log.ERROR, "[$scope][$tag] ERROR ($errorKey): $msg", throwable)
 
         val extras = Bundle().apply {
             putString(PolicyConstants.EXTRA_SCOPE, scope)
@@ -163,7 +173,7 @@ object DualTrackLogger {
         hitCooldowns[key] = now
 
         val msg = "$packageName -> $action"
-        safeXposedLog("[$scope][$tag] HIT: $msg")
+        safeModuleLog(Log.INFO, "[$scope][$tag] HIT: $msg")
 
         val extras = Bundle().apply {
             putString(PolicyConstants.EXTRA_SCOPE, scope)
@@ -265,16 +275,16 @@ object DualTrackLogger {
     private fun resolveContext(): Context? {
         appContextRef?.let { return it }
         return try {
-            val atClass = XposedHelpers.findClassIfExists("android.app.ActivityThread", null)
+            val atClass = HookReflect.findClassOrNull("android.app.ActivityThread", null)
                 ?: return null
-            val app = XposedHelpers.callStaticMethod(atClass, "currentApplication") as? Context
+            val app = HookReflect.callStaticZeroArgOrNull(atClass, "currentApplication") as? Context
             if (app != null) {
                 appContextRef = app
                 app
             } else {
-                val thread = XposedHelpers.callStaticMethod(atClass, "currentActivityThread")
+                val thread = HookReflect.callStaticZeroArgOrNull(atClass, "currentActivityThread")
                 val sysCtx = thread?.let {
-                    XposedHelpers.callMethod(it, "getSystemContext") as? Context
+                    HookReflect.callZeroArgOrNull(it, "getSystemContext") as? Context
                 }
                 if (sysCtx != null) {
                     appContextRef = sysCtx
@@ -286,9 +296,18 @@ object DualTrackLogger {
         }
     }
 
-    private fun safeXposedLog(line: String) {
+    private fun safeModuleLog(priority: Int, line: String, throwable: Throwable? = null) {
         try {
-            XposedBridge.log("[ScreenPolicy] $line")
+            val mod = moduleRef
+            if (mod != null) {
+                if (throwable != null) {
+                    mod.log(priority, LOG_TAG, line, throwable)
+                } else {
+                    mod.log(priority, LOG_TAG, line)
+                }
+            } else {
+                Log.println(priority, LOG_TAG, line)
+            }
         } catch (_: Throwable) {
         }
     }

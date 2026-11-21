@@ -3,18 +3,16 @@ package com.example.hook
 import android.content.pm.ApplicationInfo
 import android.os.Binder
 import com.example.data.PolicyConstants
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
  * Android 17 (API 37) system_server hook for internal audio playback capture (allowAudioCapture).
  *
- * Uses targeted declaredMethods filtering + XposedBridge.hookMethod (never broad hookAllMethods):
- * 1. Layer 1 (PackageInfoUtils.generateApplicationInfo): hooks only the primary core implementation
- *    overload(s) returning ApplicationInfo with the highest parameter count (max 2 methods).
+ * Uses libxposed API 102 interceptors on targeted declaredMethods:
+ * 1. Layer 1 (PackageInfoUtils.generateApplicationInfo): hooks only the deepest core overload(s)
+ *    returning ApplicationInfo (max 2 methods).
  * 2. Layer 2 (AudioService / PlaybackActivityMonitor): hooks only exact int-signature
  *    setAllowedCapturePolicy / getAllowedCapturePolicy methods.
  */
@@ -37,59 +35,60 @@ object AudioCaptureHook {
         }
     }
 
-    fun installPackageInfoLayer(classLoader: ClassLoader): Pair<Int, String?> {
+    fun installPackageInfoLayer(module: XposedModule, classLoader: ClassLoader): Pair<Int, String?> {
         return try {
-            val pkgInfoUtils = XposedHelpers.findClassIfExists(CLASS_PACKAGE_INFO_UTILS, classLoader)
+            val pkgInfoUtils = HookReflect.findClassOrNull(CLASS_PACKAGE_INFO_UTILS, classLoader)
                 ?: return 0 to "PackageInfoUtils:ClassNotFound"
 
             val targets = selectGenerateAppInfoMethods(pkgInfoUtils)
-            val callback = object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
+            var count = 0
+            for (method in targets) {
+                module.hook(method).intercept { chain ->
+                    val result = chain.proceed()
                     try {
-                        val info = param.result as? ApplicationInfo ?: return
-                        if (!PolicyCache.isAudioCaptureAllowed(info.packageName)) return
-                        val field = privateFlagsField ?: return
-                        val current = field.getInt(info)
-                        if ((current and PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE) == 0) {
-                            field.setInt(info, current or PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE)
-                            DualTrackLogger.logHit(
-                                scope = PolicyConstants.SCOPE_ANDROID,
-                                tag = TAG,
-                                packageName = info.packageName,
-                                action = "privateFlags+=ALLOW_AUDIO_PLAYBACK_CAPTURE",
-                            )
+                        val info = result as? ApplicationInfo
+                        if (info != null && PolicyCache.isAudioCaptureAllowed(info.packageName)) {
+                            val field = privateFlagsField
+                            if (field != null) {
+                                val current = field.getInt(info)
+                                if ((current and PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE) == 0) {
+                                    field.setInt(info, current or PRIVATE_FLAG_ALLOW_AUDIO_PLAYBACK_CAPTURE)
+                                    DualTrackLogger.logHit(
+                                        scope = PolicyConstants.SCOPE_SYSTEM,
+                                        tag = TAG,
+                                        packageName = info.packageName,
+                                        action = "privateFlags+=ALLOW_AUDIO_PLAYBACK_CAPTURE",
+                                    )
+                                }
+                            }
                         }
                     } catch (t: Throwable) {
                         DualTrackLogger.logError(
-                            PolicyConstants.SCOPE_ANDROID,
+                            PolicyConstants.SCOPE_SYSTEM,
                             TAG,
                             "generateAppInfo_cb",
                             t,
                         )
                     }
+                    result
                 }
-            }
-
-            var count = 0
-            for (method in targets) {
-                XposedBridge.hookMethod(method, callback)
                 count++
             }
             count to null
         } catch (t: Throwable) {
-            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_pkg_layer", t)
+            DualTrackLogger.logError(PolicyConstants.SCOPE_SYSTEM, TAG, "install_pkg_layer", t)
             0 to "PackageInfoUtils:${t.javaClass.simpleName}"
         }
     }
 
-    fun installAudioServiceLayer(classLoader: ClassLoader): Pair<Int, String?> {
+    fun installAudioServiceLayer(module: XposedModule, classLoader: ClassLoader): Pair<Int, String?> {
         return try {
             var audioHookCount = 0
-            audioHookCount += hookCapturePolicyClass(classLoader, CLASS_AUDIO_SERVICE)
-            audioHookCount += hookCapturePolicyClass(classLoader, CLASS_PLAYBACK_MONITOR)
+            audioHookCount += hookCapturePolicyClass(module, classLoader, CLASS_AUDIO_SERVICE)
+            audioHookCount += hookCapturePolicyClass(module, classLoader, CLASS_PLAYBACK_MONITOR)
             audioHookCount to null
         } catch (t: Throwable) {
-            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_audio_layer", t)
+            DualTrackLogger.logError(PolicyConstants.SCOPE_SYSTEM, TAG, "install_audio_layer", t)
             0 to "AudioService:${t.javaClass.simpleName}"
         }
     }
@@ -118,12 +117,15 @@ object AudioCaptureHook {
                 method.returnType == ApplicationInfo::class.java &&
                 method.parameterCount >= 3
         }
-        // Hook only the deepest core implementation(s) where wrapper overloads funnel through
         return candidates.sortedByDescending { it.parameterCount }.take(2)
     }
 
-    private fun hookCapturePolicyClass(classLoader: ClassLoader, className: String): Int {
-        val targetClass = XposedHelpers.findClassIfExists(className, classLoader) ?: return 0
+    private fun hookCapturePolicyClass(
+        module: XposedModule,
+        classLoader: ClassLoader,
+        className: String,
+    ): Int {
+        val targetClass = HookReflect.findClassOrNull(className, classLoader) ?: return 0
         var count = 0
 
         val setTargets = targetClass.declaredMethods.filter { method ->
@@ -132,45 +134,45 @@ object AudioCaptureHook {
                 method.parameterTypes.all { it == Int::class.javaPrimitiveType }
         }.take(2)
 
-        if (setTargets.isNotEmpty()) {
-            val setCallback = object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    try {
-                        val args = param.args ?: return
-                        if (args.isEmpty()) return
+        for (method in setTargets) {
+            module.hook(method).intercept { chain ->
+                try {
+                    val args = chain.args
+                    if (args.isNotEmpty()) {
                         val (uid, policyIndex) = when {
                             args.size >= 2 && args[0] is Int && args[1] is Int ->
                                 (args[0] as Int) to 1
                             args[0] is Int ->
                                 Binder.getCallingUid() to 0
-                            else -> return
-                        }
+                            else -> null
+                        } ?: return@intercept chain.proceed()
+
                         val matchedPkg = PolicyCache.findAllowlistedPackageForUid(uid) {
                             it.allowAudioCapture
-                        } ?: return
-                        if ((args[policyIndex] as Int) != ALLOW_CAPTURE_BY_ALL) {
-                            args[policyIndex] = ALLOW_CAPTURE_BY_ALL
+                        }
+                        if (matchedPkg != null && (args[policyIndex] as Int) != ALLOW_CAPTURE_BY_ALL) {
+                            val updatedArgs = args.toTypedArray()
+                            updatedArgs[policyIndex] = ALLOW_CAPTURE_BY_ALL
                             DualTrackLogger.logHit(
-                                scope = PolicyConstants.SCOPE_ANDROID,
+                                scope = PolicyConstants.SCOPE_SYSTEM,
                                 tag = TAG,
                                 packageName = matchedPkg,
                                 action = "setAllowedCapturePolicy=ALLOW_CAPTURE_BY_ALL",
                             )
+                            return@intercept chain.proceed(updatedArgs)
                         }
-                    } catch (t: Throwable) {
-                        DualTrackLogger.logError(
-                            PolicyConstants.SCOPE_ANDROID,
-                            TAG,
-                            "setAllowedCapturePolicy_cb",
-                            t,
-                        )
                     }
+                } catch (t: Throwable) {
+                    DualTrackLogger.logError(
+                        PolicyConstants.SCOPE_SYSTEM,
+                        TAG,
+                        "setAllowedCapturePolicy_cb",
+                        t,
+                    )
                 }
+                chain.proceed()
             }
-            for (method in setTargets) {
-                XposedBridge.hookMethod(method, setCallback)
-                count++
-            }
+            count++
         }
 
         val getTargets = targetClass.declaredMethods.filter { method ->
@@ -180,42 +182,42 @@ object AudioCaptureHook {
                 method.parameterTypes.all { it == Int::class.javaPrimitiveType }
         }.take(2)
 
-        if (getTargets.isNotEmpty()) {
-            val getCallback = object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    try {
-                        val current = param.result as? Int ?: return
-                        if (current == ALLOW_CAPTURE_BY_ALL) return
-                        val args = param.args
-                        val uid = if (!args.isNullOrEmpty() && args[0] is Int) {
+        for (method in getTargets) {
+            module.hook(method).intercept { chain ->
+                val result = chain.proceed()
+                try {
+                    val current = result as? Int
+                    if (current != null && current != ALLOW_CAPTURE_BY_ALL) {
+                        val args = chain.args
+                        val uid = if (args.isNotEmpty() && args[0] is Int) {
                             args[0] as Int
                         } else {
                             Binder.getCallingUid()
                         }
                         val matchedPkg = PolicyCache.findAllowlistedPackageForUid(uid) {
                             it.allowAudioCapture
-                        } ?: return
-                        param.result = ALLOW_CAPTURE_BY_ALL
-                        DualTrackLogger.logHit(
-                            scope = PolicyConstants.SCOPE_ANDROID,
-                            tag = TAG,
-                            packageName = matchedPkg,
-                            action = "getAllowedCapturePolicy=ALLOW_CAPTURE_BY_ALL",
-                        )
-                    } catch (t: Throwable) {
-                        DualTrackLogger.logError(
-                            PolicyConstants.SCOPE_ANDROID,
-                            TAG,
-                            "getAllowedCapturePolicy_cb",
-                            t,
-                        )
+                        }
+                        if (matchedPkg != null) {
+                            DualTrackLogger.logHit(
+                                scope = PolicyConstants.SCOPE_SYSTEM,
+                                tag = TAG,
+                                packageName = matchedPkg,
+                                action = "getAllowedCapturePolicy=ALLOW_CAPTURE_BY_ALL",
+                            )
+                            return@intercept ALLOW_CAPTURE_BY_ALL
+                        }
                     }
+                } catch (t: Throwable) {
+                    DualTrackLogger.logError(
+                        PolicyConstants.SCOPE_SYSTEM,
+                        TAG,
+                        "getAllowedCapturePolicy_cb",
+                        t,
+                    )
                 }
+                result
             }
-            for (method in getTargets) {
-                XposedBridge.hookMethod(method, getCallback)
-                count++
-            }
+            count++
         }
 
         return count

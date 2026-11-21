@@ -23,13 +23,26 @@ import org.robolectric.annotation.Config
 class ExampleRobolectricTest {
 
     @Test
-    fun `verify app name and strict xposed scope`() {
+    fun `verify app name and modern libxposed API 102 metadata resources`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
         assertTrue(appName == "录屏策略" || appName == "ScreenPolicy")
 
-        val scopes = context.resources.getStringArray(R.array.xposed_scope).toList()
-        assertEquals(listOf("android", "com.android.systemui"), scopes)
+        val classLoader = javaClass.classLoader!!
+        val moduleProp = classLoader.getResourceAsStream("META-INF/xposed/module.prop")
+            ?.bufferedReader()?.readText().orEmpty()
+        assertTrue("module.prop should declare minApiVersion=102", moduleProp.contains("minApiVersion=102"))
+        assertTrue("module.prop should declare targetApiVersion=102", moduleProp.contains("targetApiVersion=102"))
+        assertTrue("module.prop should declare staticScope=true", moduleProp.contains("staticScope=true"))
+        assertTrue("module.prop should declare exceptionMode=protective", moduleProp.contains("exceptionMode=protective"))
+
+        val javaInit = classLoader.getResourceAsStream("META-INF/xposed/java_init.list")
+            ?.bufferedReader()?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        assertEquals(listOf("com.example.hook.PolicyModuleEntry"), javaInit)
+
+        val scopes = classLoader.getResourceAsStream("META-INF/xposed/scope.list")
+            ?.bufferedReader()?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        assertEquals(listOf("system", "com.android.systemui"), scopes)
     }
 
     @Test
@@ -105,7 +118,7 @@ class ExampleRobolectricTest {
         repeat(215) { idx ->
             TelemetryStore.appendLog(
                 context = context,
-                source = PolicyConstants.SCOPE_ANDROID,
+                source = PolicyConstants.SCOPE_SYSTEM,
                 level = LogLevel.INFO,
                 tag = "Test",
                 message = "entry-$idx",
@@ -116,7 +129,7 @@ class ExampleRobolectricTest {
 
         val currentBootEntry = HookStatusEntry(
             key = PolicyConstants.HOOK_SCREENSHOT,
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
             state = HookMountState.READY,
             updatedAtMs = System.currentTimeMillis(),
             bootCount = 12,
@@ -394,5 +407,57 @@ class ExampleRobolectricTest {
             val failed = runCatching { PolicyJsonCodec.decodeBackupStrict(sample) }.isFailure
             assertTrue("Expected schema rejection for: $sample", failed)
         }
+    }
+
+    @Test
+    fun `policy cache applies remote preferences immediately and service state evaluates scopes`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("test_remote_prefs_mirror", Context.MODE_PRIVATE)
+        val config = GlobalPolicyConfig(
+            fixGameDashboardRecord = true,
+            autoConfirmGameDashboardRecord = true,
+            verboseLogging = true,
+            appPolicies = mapOf(
+                "com.example.protected" to AppPolicy(
+                    allowScreenshot = true,
+                    allowScreenRecord = false,
+                    allowAudioCapture = true,
+                    blockCaptureDetect = true,
+                ),
+            ),
+        )
+        prefs.edit()
+            .putString(PolicyConstants.PREF_KEY_CONFIG_JSON, PolicyJsonCodec.encode(config))
+            .putBoolean(PolicyConstants.PREF_KEY_FIX_GAME_DASHBOARD, true)
+            .putBoolean(PolicyConstants.PREF_KEY_AUTO_CONFIRM_GAME_DASHBOARD, true)
+            .putBoolean(PolicyConstants.PREF_KEY_VERBOSE_LOGGING, true)
+            .commit()
+
+        com.example.hook.PolicyCache.applyFromPreferences(prefs)
+        assertTrue(com.example.hook.PolicyCache.isScreenshotAllowed("com.example.protected"))
+        assertFalse(com.example.hook.PolicyCache.isScreenRecordAllowed("com.example.protected"))
+        assertTrue(com.example.hook.PolicyCache.isAudioCaptureAllowed("com.example.protected"))
+        assertTrue(com.example.hook.PolicyCache.isBlockCaptureDetectEnabled("com.example.protected"))
+        assertTrue(com.example.hook.PolicyCache.isGameDashboardFixEnabled())
+        assertTrue(com.example.hook.PolicyCache.isGameDashboardAutoConfirmEnabled())
+        assertTrue(com.example.hook.PolicyCache.isVerboseEnabled())
+
+        val fullState = com.example.data.XposedServiceState(
+            connected = true,
+            frameworkName = "LSPosed",
+            apiVersion = 102,
+            scopes = setOf("system", "com.android.systemui"),
+        )
+        assertTrue(fullState.hasSystemScope)
+        assertTrue(fullState.hasSystemUiScope)
+
+        val partialState = com.example.data.XposedServiceState(
+            connected = true,
+            frameworkName = "LSPosed",
+            apiVersion = 102,
+            scopes = setOf("system"),
+        )
+        assertTrue(partialState.hasSystemScope)
+        assertFalse(partialState.hasSystemUiScope)
     }
 }

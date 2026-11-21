@@ -32,8 +32,9 @@ class TelemetryContentProvider : ContentProvider() {
 
         val timestamp = extras?.getLong(PolicyConstants.EXTRA_TIMESTAMP, System.currentTimeMillis())
             ?: System.currentTimeMillis()
-        val scope = extras?.getString(PolicyConstants.EXTRA_SCOPE)
-            ?: if (callingUid == Process.SYSTEM_UID) PolicyConstants.SCOPE_ANDROID else PolicyConstants.SCOPE_SYSTEMUI
+        val rawScope = extras?.getString(PolicyConstants.EXTRA_SCOPE)
+            ?: if (callingUid == Process.SYSTEM_UID) PolicyConstants.SCOPE_SYSTEM else PolicyConstants.SCOPE_SYSTEMUI
+        val scope = if (rawScope == "android") PolicyConstants.SCOPE_SYSTEM else rawScope
 
         when (method) {
             PolicyConstants.METHOD_REPORT_STATUS -> {

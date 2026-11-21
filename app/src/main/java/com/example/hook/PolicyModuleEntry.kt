@@ -4,23 +4,26 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.example.data.PolicyConstants
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * LSPosed module entry point (registered in assets/xposed_init).
+ * Modern Xposed API 102 module entry point (declared in META-INF/xposed/java_init.list).
  *
  * Bootloop-proof startup contract:
- * 1. Scope hard-guard: executes ONLY in `android` (system_server) and `com.android.systemui`.
- * 2. Zero UI/Compose/AndroidX references so ART loads only a tiny pure-Hook class graph.
- * 3. `handleLoadPackage` main-thread budget < 10ms (typically < 1ms): zero disk IO and zero
- *    ContentProvider IPC on the calling thread.
- * 4. `com.android.systemui`: strictly deferred by 12,000ms (completely clearing Android's 10-second
- *    PROC_START_TIMEOUT window) and executed off the main thread; telemetry IPC deferred to ~28s.
- * 5. `android` (system_server): dispatches immediately onto a MIN_PRIORITY daemon background thread
- *    so system_server main thread overhead is near zero; telemetry IPC deferred by 28 seconds.
+ * 1. Public no-arg constructor performs zero initialization; lifecycle begins at onModuleLoaded().
+ * 2. Static scope hard-locked via META-INF/xposed/scope.list (`system` + `com.android.systemui`,
+ *    `staticScope=true`, `exceptionMode=protective`) plus explicit package guard in code.
+ * 3. Zero UI/Compose/AndroidX references so ART loads only a minimal pure-Hook class graph.
+ * 4. `onSystemServerStarting`: dispatches immediately onto a MIN_PRIORITY daemon background thread
+ *    so system_server main thread overhead is < 1ms; telemetry IPC deferred by 28 seconds.
+ * 5. `onPackageReady` (`com.android.systemui`): strictly deferred by 12,000ms (completely clearing
+ *    Android's 10-second PROC_START_TIMEOUT window) and executed off the main thread; telemetry IPC
+ *    deferred to ~28s total uptime.
  */
-class PolicyModuleEntry : IXposedHookLoadPackage {
+class PolicyModuleEntry : XposedModule() {
 
     companion object {
         private const val SYSTEM_UI_MOUNT_DELAY_MS = 12_000L
@@ -28,51 +31,59 @@ class PolicyModuleEntry : IXposedHookLoadPackage {
         private const val SYSTEM_UI_TELEMETRY_DELAY_AFTER_MOUNT_MS = 16_000L
     }
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+    override fun onModuleLoaded(param: ModuleLoadedParam) {
+        super.onModuleLoaded(param)
+        DualTrackLogger.attachModule(this)
+    }
+
+    override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        super.onSystemServerStarting(param)
         try {
-            when (lpparam.packageName) {
-                PolicyConstants.SCOPE_ANDROID -> {
-                    if (lpparam.processName == PolicyConstants.SCOPE_ANDROID) {
-                        scheduleSystemFrameworkMount(lpparam.classLoader)
-                    }
-                }
-
-                PolicyConstants.SCOPE_SYSTEMUI -> {
-                    scheduleDeferredSystemUiMount(lpparam.classLoader)
-                }
-
-                else -> {
-                    // Hard guard: never execute in any non-system process
-                    return
-                }
-            }
+            scheduleSystemFrameworkMount(param.classLoader)
         } catch (t: Throwable) {
             DualTrackLogger.logError(
-                lpparam.packageName ?: "unknown",
+                PolicyConstants.SCOPE_SYSTEM,
                 "Entry",
-                "handleLoadPackage",
+                "onSystemServerStarting",
+                t,
+            )
+        }
+    }
+
+    override fun onPackageReady(param: PackageReadyParam) {
+        super.onPackageReady(param)
+        try {
+            if (param.packageName != PolicyConstants.SCOPE_SYSTEMUI) {
+                return
+            }
+            scheduleDeferredSystemUiMount(param.classLoader)
+        } catch (t: Throwable) {
+            DualTrackLogger.logError(
+                param.packageName,
+                "Entry",
+                "onPackageReady",
                 t,
             )
         }
     }
 
     /**
-     * Spawns a single MIN_PRIORITY daemon thread immediately (< 1ms on handleLoadPackage thread)
-     * so system_server startup is never blocked by disk IO, reflection, or ContentProvider IPC.
+     * Spawns a single MIN_PRIORITY daemon thread immediately (< 1ms on system_server thread)
+     * so system_server startup is never blocked by reflection, prefs init, or ContentProvider IPC.
      */
     private fun scheduleSystemFrameworkMount(classLoader: ClassLoader) {
+        val module = this
         val worker = Thread(
             {
                 val mountStartMs = SystemClock.elapsedRealtime()
                 try {
-                    PolicyCache.init(PolicyConstants.SCOPE_ANDROID)
+                    PolicyCache.init(module, PolicyConstants.SCOPE_SYSTEM)
 
-                    // Mount PackageInfoUtils early on the background thread, then the audio service layer
                     val pkgLayerResult = try {
-                        AudioCaptureHook.installPackageInfoLayer(classLoader)
+                        AudioCaptureHook.installPackageInfoLayer(module, classLoader)
                     } catch (t: Throwable) {
                         DualTrackLogger.logError(
-                            PolicyConstants.SCOPE_ANDROID,
+                            PolicyConstants.SCOPE_SYSTEM,
                             PolicyConstants.HOOK_AUDIO_CAPTURE,
                             "pkg_layer_crash",
                             t,
@@ -80,30 +91,29 @@ class PolicyModuleEntry : IXposedHookLoadPackage {
                         0 to "PkgLayer:${t.javaClass.simpleName}"
                     }
 
-                    // Mount remaining non-boot-critical framework hooks in full isolation
-                    runIsolated(PolicyConstants.SCOPE_ANDROID, PolicyConstants.HOOK_SCREENSHOT) {
-                        ScreenshotHook.install(classLoader)
+                    runIsolated(PolicyConstants.SCOPE_SYSTEM, PolicyConstants.HOOK_SCREENSHOT) {
+                        ScreenshotHook.install(module, classLoader)
                     }
-                    runIsolated(PolicyConstants.SCOPE_ANDROID, PolicyConstants.HOOK_SCREEN_RECORD) {
-                        ScreenRecordHook.install(classLoader)
+                    runIsolated(PolicyConstants.SCOPE_SYSTEM, PolicyConstants.HOOK_SCREEN_RECORD) {
+                        ScreenRecordHook.install(module, classLoader)
                     }
-                    runIsolated(PolicyConstants.SCOPE_ANDROID, PolicyConstants.HOOK_AUDIO_CAPTURE) {
-                        val audioLayerResult = AudioCaptureHook.installAudioServiceLayer(classLoader)
+                    runIsolated(PolicyConstants.SCOPE_SYSTEM, PolicyConstants.HOOK_AUDIO_CAPTURE) {
+                        val audioLayerResult = AudioCaptureHook.installAudioServiceLayer(module, classLoader)
                         AudioCaptureHook.combineResult(pkgLayerResult, audioLayerResult)
                     }
-                    runIsolated(PolicyConstants.SCOPE_ANDROID, PolicyConstants.HOOK_CAPTURE_DETECT) {
-                        CaptureDetectHook.install(classLoader)
+                    runIsolated(PolicyConstants.SCOPE_SYSTEM, PolicyConstants.HOOK_CAPTURE_DETECT) {
+                        CaptureDetectHook.install(module, classLoader)
                     }
 
                     val elapsedMs = (SystemClock.elapsedRealtime() - mountStartMs).coerceAtLeast(0L)
                     DualTrackLogger.recordStartupSummary(
-                        scope = PolicyConstants.SCOPE_ANDROID,
-                        message = "system_server hooks ready in ${elapsedMs}ms",
+                        scope = PolicyConstants.SCOPE_SYSTEM,
+                        message = "system_server hooks ready in ${elapsedMs}ms (API 102)",
                     )
                     DualTrackLogger.scheduleDeferredBootFlush(SYSTEM_SERVER_TELEMETRY_DELAY_MS)
                 } catch (t: Throwable) {
                     DualTrackLogger.logError(
-                        PolicyConstants.SCOPE_ANDROID,
+                        PolicyConstants.SCOPE_SYSTEM,
                         "Entry",
                         "sys_mount_worker",
                         t,
@@ -149,18 +159,19 @@ class PolicyModuleEntry : IXposedHookLoadPackage {
     }
 
     private fun launchSystemUiWorker(classLoader: ClassLoader) {
+        val module = this
         val worker = Thread(
             {
                 val mountStartMs = SystemClock.elapsedRealtime()
                 try {
-                    PolicyCache.init(PolicyConstants.SCOPE_SYSTEMUI)
+                    PolicyCache.init(module, PolicyConstants.SCOPE_SYSTEMUI)
                     runIsolated(PolicyConstants.SCOPE_SYSTEMUI, PolicyConstants.HOOK_GAME_DASHBOARD) {
-                        GameDashboardRecordHook.install(classLoader)
+                        GameDashboardRecordHook.install(module, classLoader)
                     }
                     val elapsedMs = (SystemClock.elapsedRealtime() - mountStartMs).coerceAtLeast(0L)
                     DualTrackLogger.recordStartupSummary(
                         scope = PolicyConstants.SCOPE_SYSTEMUI,
-                        message = "SystemUI hook ready in ${elapsedMs}ms (deferred)",
+                        message = "SystemUI hook ready in ${elapsedMs}ms (deferred, API 102)",
                     )
                     DualTrackLogger.scheduleDeferredBootFlush(SYSTEM_UI_TELEMETRY_DELAY_AFTER_MOUNT_MS)
                 } catch (t: Throwable) {

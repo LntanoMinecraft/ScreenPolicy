@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.data.PolicyConstants
 import com.example.data.PolicyRepository
+import com.example.data.XposedServiceBridge
+import com.example.data.XposedServiceState
 import com.example.model.AccentPalette
 import com.example.model.AppLanguage
 import com.example.model.AppPolicy
@@ -73,7 +75,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 config = initialConfig,
                 appearance = initialAppearance,
                 appLanguage = readCurrentAppLanguage(),
-                status = buildStatusSummary(TelemetryStore.hookStatuses.value),
+                status = buildStatusSummary(
+                    TelemetryStore.hookStatuses.value,
+                    XposedServiceBridge.serviceState.value,
+                ),
                 logs = TelemetryStore.logs.value,
             )
         }
@@ -90,13 +95,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             TelemetryStore.hookStatuses.collect { statusMap ->
-                _uiState.update { it.copy(status = buildStatusSummary(statusMap)) }
+                _uiState.update {
+                    it.copy(
+                        status = buildStatusSummary(
+                            statusMap,
+                            XposedServiceBridge.serviceState.value,
+                        )
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            XposedServiceBridge.serviceState.collect { serviceState ->
+                if (serviceState.connected) {
+                    val syncedConfig = repository.loadGlobalPolicyConfig()
+                    _uiState.update { state ->
+                        val updatedApps = if (syncedConfig.appPolicies != state.config.appPolicies) {
+                            state.apps.map { app ->
+                                app.copy(policy = syncedConfig.appPolicies[app.packageName] ?: AppPolicy())
+                            }.sortedWith(
+                                compareByDescending<InstalledAppInfo> { it.policy.hasAnyEnabled }
+                                    .thenBy { it.label.lowercase() }
+                            )
+                        } else {
+                            state.apps
+                        }
+                        state.copy(
+                            config = syncedConfig,
+                            apps = updatedApps,
+                            status = buildStatusSummary(
+                                TelemetryStore.hookStatuses.value,
+                                serviceState,
+                            ),
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            status = buildStatusSummary(
+                                TelemetryStore.hookStatuses.value,
+                                serviceState,
+                            )
+                        )
+                    }
+                }
             }
         }
     }
 
     private fun buildStatusSummary(
         statusMap: Map<String, com.example.model.HookStatusEntry>,
+        serviceState: XposedServiceState,
     ): PolicyStatusSummary {
         val currentBoot = TelemetryStore.currentBootCount(appContext)
         val orderedKeys = listOf(
@@ -115,7 +164,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        val frameworkEntries = entries.filter { it.scope == PolicyConstants.SCOPE_ANDROID }
+        val frameworkEntries = entries.filter {
+            it.scope == PolicyConstants.SCOPE_SYSTEM || it.scope == "android"
+        }
         val systemUiEntries = entries.filter { it.scope == PolicyConstants.SCOPE_SYSTEMUI }
 
         val frameworkAlive = frameworkEntries.any { it.state != HookMountState.WAITING }
@@ -124,15 +175,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val frameworkReady = frameworkEntries.count { it.state == HookMountState.READY }
         val systemUiReady = systemUiEntries.count { it.state == HookMountState.READY }
 
+        val effectiveFrameworkActive = frameworkAlive || (serviceState.connected && serviceState.hasSystemScope)
+        val effectiveSystemUiActive = systemUiAlive || (serviceState.connected && serviceState.hasSystemUiScope)
+
         val activationState = when {
-            frameworkAlive && systemUiAlive -> com.example.model.ModuleActivationState.ACTIVE
-            frameworkAlive && !systemUiAlive -> com.example.model.ModuleActivationState.MISSING_SYSTEM_UI
-            !frameworkAlive && systemUiAlive -> com.example.model.ModuleActivationState.MISSING_FRAMEWORK
+            effectiveFrameworkActive && effectiveSystemUiActive ->
+                com.example.model.ModuleActivationState.ACTIVE
+            effectiveFrameworkActive && !effectiveSystemUiActive ->
+                com.example.model.ModuleActivationState.MISSING_SYSTEM_UI
+            !effectiveFrameworkActive && effectiveSystemUiActive ->
+                com.example.model.ModuleActivationState.MISSING_FRAMEWORK
             else -> com.example.model.ModuleActivationState.INACTIVE
         }
 
         return PolicyStatusSummary(
             activationState = activationState,
+            serviceConnected = serviceState.connected,
+            frameworkName = serviceState.frameworkName,
+            apiVersion = serviceState.apiVersion,
+            scopeHasSystem = serviceState.hasSystemScope,
+            scopeHasSystemUi = serviceState.hasSystemUiScope,
             frameworkAlive = frameworkAlive,
             systemUiAlive = systemUiAlive,
             frameworkReadyCount = frameworkReady,
@@ -157,10 +219,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshStatusAndLogs() {
+        XposedServiceBridge.refreshScopeIfBound()
         TelemetryStore.reload(appContext)
         _uiState.update {
             it.copy(
-                status = buildStatusSummary(TelemetryStore.hookStatuses.value),
+                status = buildStatusSummary(
+                    TelemetryStore.hookStatuses.value,
+                    XposedServiceBridge.serviceState.value,
+                ),
                 logs = TelemetryStore.logs.value,
                 appLanguage = readCurrentAppLanguage(),
             )

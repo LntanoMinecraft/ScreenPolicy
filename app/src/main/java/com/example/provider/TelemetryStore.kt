@@ -112,9 +112,10 @@ object TelemetryStore {
         ensureLoaded(context)
         synchronized(lock) {
             val current = _hookStatuses.value.toMutableMap()
+            val normalizedScope = normalizeScope(scope)
             current[hookKey] = HookStatusEntry(
                 key = hookKey,
-                scope = scope,
+                scope = normalizedScope,
                 state = if (success) HookMountState.READY else HookMountState.FAILED,
                 detail = detail.take(256),
                 updatedAtMs = timestampMs,
@@ -149,25 +150,34 @@ object TelemetryStore {
     fun defaultHookStatusMap(): Map<String, HookStatusEntry> = linkedMapOf(
         PolicyConstants.HOOK_SCREENSHOT to HookStatusEntry(
             key = PolicyConstants.HOOK_SCREENSHOT,
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
         ),
         PolicyConstants.HOOK_SCREEN_RECORD to HookStatusEntry(
             key = PolicyConstants.HOOK_SCREEN_RECORD,
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
         ),
         PolicyConstants.HOOK_AUDIO_CAPTURE to HookStatusEntry(
             key = PolicyConstants.HOOK_AUDIO_CAPTURE,
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
         ),
         PolicyConstants.HOOK_CAPTURE_DETECT to HookStatusEntry(
             key = PolicyConstants.HOOK_CAPTURE_DETECT,
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
         ),
         PolicyConstants.HOOK_GAME_DASHBOARD to HookStatusEntry(
             key = PolicyConstants.HOOK_GAME_DASHBOARD,
             scope = PolicyConstants.SCOPE_SYSTEMUI,
         ),
     )
+
+    private fun normalizeScope(raw: String?): String {
+        return when (raw) {
+            "android", PolicyConstants.SCOPE_SYSTEM -> PolicyConstants.SCOPE_SYSTEM
+            PolicyConstants.SCOPE_SYSTEMUI -> PolicyConstants.SCOPE_SYSTEMUI
+            null, "" -> PolicyConstants.SCOPE_SYSTEM
+            else -> raw
+        }
+    }
 
     private fun loadLogsLocked(context: Context) {
         val file = File(context.filesDir, LOG_FILE_NAME)
@@ -245,7 +255,7 @@ object TelemetryStore {
                     .getOrDefault(HookMountState.WAITING)
                 defaults[key] = HookStatusEntry(
                     key = key,
-                    scope = obj.optString("scope", PolicyConstants.SCOPE_ANDROID),
+                    scope = normalizeScope(obj.optString("scope", PolicyConstants.SCOPE_SYSTEM)),
                     state = state,
                     detail = obj.optString("detail", ""),
                     updatedAtMs = obj.optLong("ts", 0L),

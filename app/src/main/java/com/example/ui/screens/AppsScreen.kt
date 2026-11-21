@@ -404,8 +404,19 @@ private fun ModuleStatusHeroCard(
                 status.systemUiReadyCount,
                 status.systemUiTotalCount,
             )
-            descriptionText = ""
+            descriptionText = if (status.serviceConnected && !status.frameworkAlive && !status.systemUiAlive) {
+                stringResource(R.string.status_service_syncing_desc)
+            } else {
+                ""
+            }
         }
+    }
+
+    val frameworkBadgeText = if (status.serviceConnected && status.apiVersion > 0) {
+        val name = status.frameworkName.ifBlank { "Xposed" }
+        stringResource(R.string.status_framework_badge_format, name, status.apiVersion)
+    } else {
+        null
     }
 
     Surface(
@@ -447,12 +458,34 @@ private fun ModuleStatusHeroCard(
                         )
                     }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = titleText,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = contentColor,
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = titleText,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = contentColor,
+                            )
+                            if (frameworkBadgeText != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+                                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                                ) {
+                                    Text(
+                                        text = frameworkBadgeText,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFeatureSettings = TabularNumericFeature,
+                                        ),
+                                        color = contentColor,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
                         if (summaryText != null) {
                             Text(
                                 text = summaryText,

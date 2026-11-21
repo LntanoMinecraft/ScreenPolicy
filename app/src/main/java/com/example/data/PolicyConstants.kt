@@ -2,6 +2,7 @@ package com.example.data
 
 object PolicyConstants {
     const val MODULE_PACKAGE = "com.lntano.screenpolicy"
+    const val REMOTE_PREFS_GROUP = "screen_policy"
     const val POLICY_PREFS_NAME = "policy_config"
     const val UI_PREFS_NAME = "ui_appearance"
 
@@ -14,7 +15,8 @@ object PolicyConstants {
     const val PREF_UI_DYNAMIC_COLOR = "dynamic_color"
     const val PREF_UI_PALETTE = "accent_palette"
 
-    const val SCOPE_ANDROID = "android"
+    /** Modern Xposed API 102 virtual package name for system_server. */
+    const val SCOPE_SYSTEM = "system"
     const val SCOPE_SYSTEMUI = "com.android.systemui"
 
     const val HOOK_SCREENSHOT = "screenshot_capture"

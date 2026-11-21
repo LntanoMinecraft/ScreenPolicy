@@ -83,7 +83,8 @@ secrets {
 }
 
 dependencies {
-  compileOnly(libs.xposed.api)
+  compileOnly(libs.libxposed.api)
+  implementation(libs.libxposed.service)
 
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.activity.compose)
@@ -117,7 +118,7 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-fun resolveVersionCode(): Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 6
+fun resolveVersionCode(): Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 7
 
 fun resolveVersionName(): String =
   System.getenv("RELEASE_VERSION")
@@ -129,4 +130,4 @@ fun resolveVersionName(): String =
       ?.take(7)
       ?.takeIf { it.isNotEmpty() }
       ?.let { "dev-$it" }
-    ?: "6.0"
+    ?: "7.0"

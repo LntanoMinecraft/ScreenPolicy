@@ -1,27 +1,24 @@
-# ScreenPolicy R8 / ProGuard rules
-# Keep only LSPosed entry point, IPC ContentProvider, and policy serialization models.
+# ScreenPolicy R8 / ProGuard rules (Modern Xposed API 102)
+# Official libxposed/api rules + IPC ContentProvider and policy serialization models.
 
-# 1. LSPosed module entry point declared in assets/xposed_init
--keep class com.example.hook.PolicyModuleEntry {
+-dontwarn io.github.libxposed.annotation.**
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
     public <init>();
-    public void handleLoadPackage(de.robv.android.xposed.callbacks.XC_LoadPackage$LoadPackageParam);
 }
 
-# 2. UID-verified TelemetryContentProvider declared in AndroidManifest.xml
+# UID-verified TelemetryContentProvider declared in AndroidManifest.xml
 -keep class com.example.provider.TelemetryContentProvider {
     *;
 }
 
-# 3. Allowlist serialization models
+# Allowlist serialization models
 -keep class com.example.model.AppPolicy {
     *;
 }
 -keep class com.example.model.GlobalPolicyConfig {
     *;
 }
-
-# 4. Provided compileOnly Xposed API classes exist at runtime in LSPosed
--dontwarn de.robv.android.xposed.**
 
 # Preserve concise stack trace metadata for Android 17 field diagnostics
 -keepattributes SourceFile,LineNumberTable

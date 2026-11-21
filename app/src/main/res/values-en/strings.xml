@@ -20,6 +20,8 @@
     <string name="status_detail_ready">Ready</string>
     <string name="status_detail_waiting">Pending</string>
     <string name="status_detail_failed">Missed</string>
+    <string name="status_framework_badge_format">%1$s · API %2$d</string>
+    <string name="status_service_syncing_desc">Framework service connected; waiting for deferred hook sync</string>
 
     <!-- Policy Labels -->
     <string name="policy_screenshot_title">Screenshots</string>
@@ -105,11 +107,11 @@
     <string name="about_screen_title">About</string>
     <string name="about_navigate_back">Back</string>
     <string name="about_version_pill_format">v%1$s (%2$d) · Android 17</string>
-    <string name="about_scope_label">android · com.android.systemui</string>
+    <string name="about_scope_label">system · com.android.systemui</string>
     <string name="about_github_title">Project Repository (GitHub)</string>
     <string name="about_github_subtitle">github.com/LntanoMinecraft/ScreenPolicy</string>
     <string name="about_coolapk_title">Developer CoolApk</string>
     <string name="about_coolapk_subtitle">CoolApk · UID 34054336</string>
     <string name="settings_about_version_format">Version %1$s (%2$d) · Android 17</string>
-    <string name="settings_about_scope">Scope: android · com.android.systemui</string>
+    <string name="settings_about_scope">Scope: system · com.android.systemui</string>
 </resources>

@@ -2,16 +2,14 @@ package com.example.hook
 
 import android.view.WindowManager
 import com.example.data.PolicyConstants
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Method
+import java.util.function.Consumer
 
 /**
  * Android 17 (API 37) system_server hook for screenshot-only capture relief (allowScreenshot).
  *
- * Uses targeted declaredMethods filtering + XposedBridge.hookMethod (never broad hookAllMethods)
- * to avoid ART deoptimization overhead during system_server boot.
+ * Uses libxposed API 102 interceptor chains on targeted declaredMethods (zero broad wildcard hooks).
  *
  * Split-screen / multi-window safety invariant:
  * `mCaptureSecureLayers` is only enabled when every visible FLAG_SECURE window on the captured
@@ -25,35 +23,38 @@ object ScreenshotHook {
     @Volatile
     private var wmsInstance: Any? = null
 
-    fun install(classLoader: ClassLoader): Pair<Boolean, String> {
+    fun install(module: XposedModule, classLoader: ClassLoader): Pair<Boolean, String> {
         var wmsHooks = 0
         var scHooks = 0
         val errors = mutableListOf<String>()
 
         try {
-            val wmsClass = XposedHelpers.findClassIfExists(CLASS_WMS, classLoader)
+            val wmsClass = HookReflect.findClassOrNull(CLASS_WMS, classLoader)
             if (wmsClass != null) {
-                val wmsCallback = object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                val targets = selectWmsCaptureDisplayMethods(wmsClass)
+                for (method in targets) {
+                    module.hook(method).intercept { chain ->
                         try {
-                            wmsInstance = param.thisObject
-                            val args = param.args ?: return
-                            val displayId = args.firstOrNull { it is Int } as? Int
-                            val captureArgs = findCaptureArgs(args) ?: return
-                            applyAllowlistIfSafe(param.thisObject, displayId, captureArgs, "WMS.captureDisplay")
+                            val receiver = chain.thisObject
+                            if (receiver != null) {
+                                wmsInstance = receiver
+                                val args = chain.args
+                                val displayId = args.firstOrNull { it is Int } as? Int
+                                val captureArgs = findCaptureArgs(args)
+                                if (captureArgs != null) {
+                                    applyAllowlistIfSafe(receiver, displayId, captureArgs, "WMS.captureDisplay")
+                                }
+                            }
                         } catch (t: Throwable) {
                             DualTrackLogger.logError(
-                                PolicyConstants.SCOPE_ANDROID,
+                                PolicyConstants.SCOPE_SYSTEM,
                                 TAG,
                                 "wms_captureDisplay_cb",
                                 t,
                             )
                         }
+                        chain.proceed()
                     }
-                }
-                val targets = selectWmsCaptureDisplayMethods(wmsClass)
-                for (method in targets) {
-                    XposedBridge.hookMethod(method, wmsCallback)
                     wmsHooks++
                 }
             } else {
@@ -61,38 +62,40 @@ object ScreenshotHook {
             }
         } catch (t: Throwable) {
             errors.add("WMS:${t.javaClass.simpleName}")
-            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_wms", t)
+            DualTrackLogger.logError(PolicyConstants.SCOPE_SYSTEM, TAG, "install_wms", t)
         }
 
         try {
-            val scClass = XposedHelpers.findClassIfExists(CLASS_SCREEN_CAPTURE, classLoader)
+            val scClass = HookReflect.findClassOrNull(CLASS_SCREEN_CAPTURE, classLoader)
             if (scClass != null) {
-                val scCallback = object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                val targets = selectScreenCaptureMethods(scClass)
+                for (method in targets) {
+                    val methodName = method.name
+                    module.hook(method).intercept { chain ->
                         try {
-                            val wms = wmsInstance ?: return
-                            val args = param.args ?: return
-                            val captureArgs = findCaptureArgs(args) ?: return
-                            applyAllowlistIfSafe(wms, null, captureArgs, "ScreenCapture.${param.method.name}")
+                            val wms = wmsInstance
+                            if (wms != null) {
+                                val captureArgs = findCaptureArgs(chain.args)
+                                if (captureArgs != null) {
+                                    applyAllowlistIfSafe(wms, null, captureArgs, "ScreenCapture.$methodName")
+                                }
+                            }
                         } catch (t: Throwable) {
                             DualTrackLogger.logError(
-                                PolicyConstants.SCOPE_ANDROID,
+                                PolicyConstants.SCOPE_SYSTEM,
                                 TAG,
                                 "screenCapture_cb",
                                 t,
                             )
                         }
+                        chain.proceed()
                     }
-                }
-                val targets = selectScreenCaptureMethods(scClass)
-                for (method in targets) {
-                    XposedBridge.hookMethod(method, scCallback)
                     scHooks++
                 }
             }
         } catch (t: Throwable) {
             errors.add("ScreenCapture:${t.javaClass.simpleName}")
-            DualTrackLogger.logError(PolicyConstants.SCOPE_ANDROID, TAG, "install_sc", t)
+            DualTrackLogger.logError(PolicyConstants.SCOPE_SYSTEM, TAG, "install_sc", t)
         }
 
         val ok = wmsHooks > 0 || scHooks > 0
@@ -135,13 +138,13 @@ object ScreenshotHook {
     private fun isCaptureArgsType(type: Class<*>): Boolean {
         if (type.isPrimitive) return false
         return type.name.contains("CaptureArgs") ||
-            XposedHelpers.findFieldIfExists(type, "mCaptureSecureLayers") != null
+            HookReflect.findFieldOrNull(type, "mCaptureSecureLayers") != null
     }
 
-    private fun findCaptureArgs(args: Array<Any?>): Any? {
+    private fun findCaptureArgs(args: List<Any?>): Any? {
         for (arg in args) {
             if (arg == null) continue
-            val field = XposedHelpers.findFieldIfExists(arg.javaClass, "mCaptureSecureLayers")
+            val field = HookReflect.findFieldOrNull(arg.javaClass, "mCaptureSecureLayers")
             if (field != null) return arg
         }
         return null
@@ -153,7 +156,7 @@ object ScreenshotHook {
         captureArgs: Any,
         sourceAction: String,
     ) {
-        val field = XposedHelpers.findFieldIfExists(captureArgs.javaClass, "mCaptureSecureLayers")
+        val field = HookReflect.findFieldOrNull(captureArgs.javaClass, "mCaptureSecureLayers")
             ?: return
         if (field.getBoolean(captureArgs)) return
 
@@ -162,7 +165,7 @@ object ScreenshotHook {
 
         field.setBoolean(captureArgs, true)
         DualTrackLogger.logHit(
-            scope = PolicyConstants.SCOPE_ANDROID,
+            scope = PolicyConstants.SCOPE_SYSTEM,
             tag = TAG,
             packageName = matchedPackages.first(),
             action = "$sourceAction -> mCaptureSecureLayers=true",
@@ -170,31 +173,29 @@ object ScreenshotHook {
     }
 
     private fun collectSafeScreenshotPackagesOnDisplay(wms: Any, displayId: Int?): Set<String>? {
-        val root = XposedHelpers.getObjectField(wms, "mRoot") ?: return null
+        val root = HookReflect.getObjectFieldOrNull(wms, "mRoot") ?: return null
         val displayContent = when {
-            displayId != null -> try {
-                XposedHelpers.callMethod(root, "getDisplayContent", displayId)
-            } catch (_: Throwable) {
-                null
-            }
+            displayId != null -> HookReflect.callMethodExactOrNull(
+                root,
+                "getDisplayContent",
+                arrayOf(Int::class.javaPrimitiveType!!),
+                displayId,
+            )
             else -> null
-        } ?: try {
-            XposedHelpers.callMethod(root, "getTopFocusedDisplayContent")
-        } catch (_: Throwable) {
-            null
-        } ?: return null
+        } ?: HookReflect.callZeroArgOrNull(root, "getTopFocusedDisplayContent")
+            ?: return null
 
         val securePackages = linkedSetOf<String>()
         var hasForbiddenSecureWindow = false
 
-        val consumer = java.util.function.Consumer<Any> { windowState ->
+        val consumer = Consumer<Any> { windowState ->
             try {
-                val visible = (XposedHelpers.callMethod(windowState, "isVisibleNow") as? Boolean)
-                    ?: (XposedHelpers.callMethod(windowState, "isVisible") as? Boolean)
+                val visible = (HookReflect.callZeroArgOrNull(windowState, "isVisibleNow") as? Boolean)
+                    ?: (HookReflect.callZeroArgOrNull(windowState, "isVisible") as? Boolean)
                     ?: false
                 if (!visible) return@Consumer
 
-                val attrs = XposedHelpers.getObjectField(windowState, "mAttrs") as? WindowManager.LayoutParams
+                val attrs = HookReflect.getObjectFieldOrNull(windowState, "mAttrs") as? WindowManager.LayoutParams
                 val hasFlagSecure = attrs != null &&
                     (attrs.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
                 if (!hasFlagSecure) return@Consumer
@@ -210,10 +211,21 @@ object ScreenshotHook {
             }
         }
 
-        try {
-            XposedHelpers.callMethod(displayContent, "forAllWindows", consumer, true)
-        } catch (_: Throwable) {
-            val focused = XposedHelpers.getObjectField(displayContent, "mCurrentFocus") ?: return null
+        val traversed = HookReflect.callMethodExactOrNull(
+            displayContent,
+            "forAllWindows",
+            arrayOf(Consumer::class.java, Boolean::class.javaPrimitiveType!!),
+            consumer,
+            true,
+        ) != null || HookReflect.findMethodExactOrNull(
+            displayContent.javaClass,
+            "forAllWindows",
+            Consumer::class.java,
+            Boolean::class.javaPrimitiveType!!,
+        ) != null
+
+        if (!traversed) {
+            val focused = HookReflect.getObjectFieldOrNull(displayContent, "mCurrentFocus") ?: return null
             consumer.accept(focused)
         }
 
@@ -228,7 +240,7 @@ object ScreenshotHook {
         attrs: WindowManager.LayoutParams?,
     ): String? {
         return try {
-            val owning = XposedHelpers.callMethod(windowState, "getOwningPackage") as? String
+            val owning = HookReflect.callZeroArgOrNull(windowState, "getOwningPackage") as? String
             if (!owning.isNullOrEmpty()) owning else attrs?.packageName
         } catch (_: Throwable) {
             attrs?.packageName

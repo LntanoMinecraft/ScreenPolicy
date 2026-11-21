@@ -1,6 +1,5 @@
 package com.example.data
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -19,63 +18,57 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Persists allowlist policies via world-readable SharedPreferences (for LSPosed XSharedPreferences)
- * and UI appearance settings via private SharedPreferences. Uses zero-permission launcher queries
- * and SAF streams for JSON export/import.
+ * Persists allowlist and global policy configurations via libxposed API 102 Remote Preferences
+ * ("screen_policy") backed by a private local mirror for unactivated preview and SAF import/export.
+ * Zero usage of deprecated MODE_WORLD_READABLE or XSharedPreferences.
  */
 class PolicyRepository(private val context: Context) {
 
     private val appContext: Context = context.applicationContext
 
+    private val localPolicyPrefs: SharedPreferences by lazy {
+        appContext.getSharedPreferences(PolicyConstants.POLICY_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
     private val uiPrefs: SharedPreferences by lazy {
         appContext.getSharedPreferences(PolicyConstants.UI_PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    /**
-     * Checks whether LSPosed's world-readable preference bridge is active for this module.
-     * In LSPosed with xposedsharedprefs=true, MODE_WORLD_READABLE succeeds ONLY when active.
-     */
-    @Suppress("DEPRECATION")
-    @SuppressLint("WorldReadableFiles")
-    fun isWorldReadablePrefsActive(): Boolean {
-        return try {
-            appContext.getSharedPreferences(
-                PolicyConstants.POLICY_PREFS_NAME,
-                Context.MODE_WORLD_READABLE,
-            )
-            true
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    @SuppressLint("WorldReadableFiles")
-    private fun obtainPolicyPrefs(): SharedPreferences {
-        return try {
-            appContext.getSharedPreferences(
-                PolicyConstants.POLICY_PREFS_NAME,
-                Context.MODE_WORLD_READABLE,
-            )
-        } catch (_: SecurityException) {
-            appContext.getSharedPreferences(
-                PolicyConstants.POLICY_PREFS_NAME,
-                Context.MODE_PRIVATE,
-            )
-        }
-    }
-
     fun loadGlobalPolicyConfig(): GlobalPolicyConfig {
-        val prefs = obtainPolicyPrefs()
-        val raw = prefs.getString(PolicyConstants.PREF_KEY_CONFIG_JSON, null)
+        val remoteRaw = runCatching {
+            XposedServiceBridge.getRemotePreferences()
+                ?.getString(PolicyConstants.PREF_KEY_CONFIG_JSON, null)
+        }.getOrNull()
+
+        val raw = if (!remoteRaw.isNullOrBlank()) {
+            remoteRaw
+        } else if (XposedServiceBridge.isUserUnlocked(appContext)) {
+            localPolicyPrefs.getString(PolicyConstants.PREF_KEY_CONFIG_JSON, null)
+        } else {
+            null
+        }
         return runCatching { PolicyJsonCodec.decode(raw) }.getOrElse { GlobalPolicyConfig() }
     }
 
     fun saveGlobalPolicyConfig(config: GlobalPolicyConfig) {
-        val prefs = obtainPolicyPrefs()
         val serialized = PolicyJsonCodec.encode(config)
+
+        if (XposedServiceBridge.isUserUnlocked(appContext)) {
+            writePolicyToPrefs(localPolicyPrefs, serialized, config)
+        }
+
+        runCatching {
+            XposedServiceBridge.getRemotePreferences()?.let { remotePrefs ->
+                writePolicyToPrefs(remotePrefs, serialized, config)
+            }
+        }
+    }
+
+    private fun writePolicyToPrefs(
+        prefs: SharedPreferences,
+        serialized: String,
+        config: GlobalPolicyConfig,
+    ) {
         prefs.edit()
             .putString(PolicyConstants.PREF_KEY_CONFIG_JSON, serialized)
             .putBoolean(PolicyConstants.PREF_KEY_FIX_GAME_DASHBOARD, config.fixGameDashboardRecord)

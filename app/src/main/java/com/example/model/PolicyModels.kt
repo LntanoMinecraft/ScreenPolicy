@@ -41,6 +41,11 @@ data class HookStatusEntry(
 
 data class PolicyStatusSummary(
     val activationState: ModuleActivationState = ModuleActivationState.INACTIVE,
+    val serviceConnected: Boolean = false,
+    val frameworkName: String = "",
+    val apiVersion: Int = 0,
+    val scopeHasSystem: Boolean = false,
+    val scopeHasSystemUi: Boolean = false,
     val frameworkAlive: Boolean = false,
     val systemUiAlive: Boolean = false,
     val frameworkReadyCount: Int = 0,
