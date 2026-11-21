@@ -29,19 +29,19 @@ class ExampleRobolectricTest {
         assertTrue(appName == "录屏策略" || appName == "ScreenPolicy")
 
         val classLoader = javaClass.classLoader!!
-        val moduleProp = classLoader.getResourceAsStream("META-INF/xposed/module.prop")
-            ?.bufferedReader()?.readText().orEmpty()
-        assertTrue("module.prop should declare minApiVersion=102", moduleProp.contains("minApiVersion=102"))
-        assertTrue("module.prop should declare targetApiVersion=102", moduleProp.contains("targetApiVersion=102"))
-        assertTrue("module.prop should declare staticScope=true", moduleProp.contains("staticScope=true"))
-        assertTrue("module.prop should declare exceptionMode=protective", moduleProp.contains("exceptionMode=protective"))
+        val modulePropLines = classLoader.getResourceAsStream("META-INF/xposed/module.prop")
+            ?.bufferedReader()?.readLines()?.filter { it.isNotEmpty() }.orEmpty()
+        assertEquals(
+            listOf("minApiVersion=102", "targetApiVersion=102", "staticScope=true"),
+            modulePropLines,
+        )
 
         val javaInit = classLoader.getResourceAsStream("META-INF/xposed/java_init.list")
-            ?.bufferedReader()?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+            ?.bufferedReader()?.readLines()?.filter { it.isNotEmpty() }.orEmpty()
         assertEquals(listOf("com.example.hook.PolicyModuleEntry"), javaInit)
 
         val scopes = classLoader.getResourceAsStream("META-INF/xposed/scope.list")
-            ?.bufferedReader()?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+            ?.bufferedReader()?.readLines()?.filter { it.isNotEmpty() }.orEmpty()
         assertEquals(listOf("system", "com.android.systemui"), scopes)
     }
 

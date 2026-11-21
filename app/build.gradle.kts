@@ -72,6 +72,15 @@ android {
     includeInApk = false
     includeInBundle = true
   }
+  packaging {
+    resources {
+      pickFirsts += setOf(
+        "META-INF/xposed/module.prop",
+        "META-INF/xposed/java_init.list",
+        "META-INF/xposed/scope.list",
+      )
+    }
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -119,7 +128,7 @@ dependencies {
 }
 
 fun resolveVersionCode(): Int =
-  System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 10 + it } ?: 7
+  System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 10 + it } ?: 8
 
 fun resolveVersionName(): String =
   System.getenv("RELEASE_VERSION")
@@ -131,7 +140,7 @@ fun resolveVersionName(): String =
       ?.take(7)
       ?.takeIf { it.isNotEmpty() }
       ?.let { "dev-$it" }
-    ?: "7.0"
+    ?: "8.0"
 
 // libxposed:service:102.0.0 and libxposed:interface:102.0.0 have minSdk=26 and use no API 37
 // symbols, but declare minCompileSdk=37 in aar-metadata.properties. Disabling AAR metadata
