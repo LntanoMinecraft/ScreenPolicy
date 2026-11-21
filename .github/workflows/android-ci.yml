@@ -92,7 +92,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease -x lintVitalAnalyzeRelease --no-configuration-cache
+        run: gradle assembleRelease --no-configuration-cache
 
       - name: Rename Release APK
         env:
