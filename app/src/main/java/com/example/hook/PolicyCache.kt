@@ -1,6 +1,7 @@
 package com.example.hook
 
 import android.app.Application
+import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.SystemClock
@@ -9,6 +10,7 @@ import com.example.data.PolicyJsonCodec
 import com.example.model.AppPolicy
 import io.github.libxposed.api.XposedModule
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * High-frequency, zero-disk-polling runtime policy cache for system_server and SystemUI.
@@ -18,12 +20,15 @@ import java.util.concurrent.ConcurrentHashMap
  * - Hot paths (e.g., WindowState.isSecureLocked at 120Hz) perform only a lock-free
  *   ConcurrentHashMap lookup with zero disk IO and zero polling overhead.
  * - Any preference update written by the app UI via XposedService pushes an instant
- *   in-memory cache refresh in milliseconds.
+ *   in-memory cache refresh in milliseconds and notifies registered policy listeners
+ *   (e.g., AudioCaptureHook active audioserver cache refresh).
  */
 object PolicyCache {
     private const val UID_CACHE_TTL_MS = 5000L
+    private const val EMPTY_UID_CACHE_TTL_MS = 500L
 
     private val policyMap = ConcurrentHashMap<String, AppPolicy>()
+    private val changeListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
     private var remotePrefs: SharedPreferences? = null
@@ -66,6 +71,14 @@ object PolicyCache {
         }
     }
 
+    fun addPolicyChangeListener(listener: () -> Unit) {
+        changeListeners.addIfAbsent(listener)
+    }
+
+    internal fun removePolicyChangeListener(listener: () -> Unit) {
+        changeListeners.remove(listener)
+    }
+
     internal fun applyFromPreferences(prefs: SharedPreferences) {
         val raw = prefs.getString(PolicyConstants.PREF_KEY_CONFIG_JSON, null)
         val config = runCatching { PolicyJsonCodec.decode(raw) }.getOrDefault(
@@ -99,11 +112,29 @@ object PolicyCache {
                 policyMap.remove(pkg)
             }
         }
+
+        for (listener in changeListeners) {
+            try {
+                listener()
+            } catch (_: Throwable) {
+                // Keep policy change dispatch isolated
+            }
+        }
     }
 
     fun getPolicy(packageName: String?): AppPolicy? {
         if (packageName.isNullOrEmpty()) return null
         return policyMap[packageName]
+    }
+
+    fun getAudioCaptureAllowedPackages(): Set<String> {
+        val result = LinkedHashSet<String>()
+        policyMap.forEach { (pkg, policy) ->
+            if (policy.allowAudioCapture) {
+                result.add(pkg)
+            }
+        }
+        return result
     }
 
     fun isScreenshotAllowed(packageName: String?): Boolean {
@@ -134,6 +165,27 @@ object PolicyCache {
         return verboseLogging
     }
 
+    /**
+     * Seeds the UID -> package cache when a proactive package->UID lookup succeeds,
+     * ensuring instant hit resolution on the AudioSystem/AudioService hot path.
+     */
+    internal fun registerResolvedUid(uid: Int, packageName: String) {
+        if (uid <= 0 || packageName.isEmpty()) return
+        val now = SystemClock.elapsedRealtime()
+        val existing = uidCache[uid]?.packages
+        val merged = if (existing == null || existing.isEmpty()) {
+            arrayOf(packageName)
+        } else if (existing.contains(packageName)) {
+            existing
+        } else {
+            existing + packageName
+        }
+        if (uidCache.size > 256) {
+            uidCache.clear()
+        }
+        uidCache[uid] = CachedUidPackages(merged, now + UID_CACHE_TTL_MS)
+    }
+
     fun resolvePackagesForUid(uid: Int): Array<String> {
         if (uid <= 0) return emptyArray()
         val now = SystemClock.elapsedRealtime()
@@ -141,20 +193,73 @@ object PolicyCache {
         if (cached != null && now < cached.expiresAtMs) {
             return cached.packages
         }
-        val resolved = try {
-            val atClass = HookReflect.findClassOrNull("android.app.ActivityThread", null)
-                ?: return emptyArray()
-            val app = HookReflect.callStaticZeroArgOrNull(atClass, "currentApplication") as? Application
-            val pm: PackageManager? = app?.packageManager
-            pm?.getPackagesForUid(uid) ?: emptyArray()
-        } catch (_: Throwable) {
-            emptyArray()
-        }
+        val resolved = queryPackagesForUid(uid)
         if (uidCache.size > 256) {
             uidCache.clear()
         }
-        uidCache[uid] = CachedUidPackages(resolved, now + UID_CACHE_TTL_MS)
+        val ttl = if (resolved.isNotEmpty()) UID_CACHE_TTL_MS else EMPTY_UID_CACHE_TTL_MS
+        uidCache[uid] = CachedUidPackages(resolved, now + ttl)
         return resolved
+    }
+
+    private fun queryPackagesForUid(uid: Int): Array<String> {
+        try {
+            val pm = resolveSystemPackageManager()
+            val pkgs = pm?.getPackagesForUid(uid)
+            if (pkgs != null && pkgs.isNotEmpty()) {
+                return pkgs
+            }
+        } catch (_: Throwable) {
+            // Fall through to PackageManagerInternal
+        }
+
+        try {
+            val localServices = HookReflect.findClassOrNull("com.android.server.LocalServices", null)
+            val pmInternalClass = HookReflect.findClassOrNull(
+                "android.content.pm.PackageManagerInternal",
+                null,
+            )
+            if (localServices != null && pmInternalClass != null) {
+                val pmInternal = HookReflect.callStaticMethodExactOrNull(
+                    localServices,
+                    "getService",
+                    arrayOf(Class::class.java),
+                    pmInternalClass,
+                )
+                if (pmInternal != null) {
+                    val pkgName = HookReflect.callMethodExactOrNull(
+                        pmInternal,
+                        "getNameForUid",
+                        arrayOf(Int::class.javaPrimitiveType!!),
+                        uid,
+                    ) as? String
+                    if (!pkgName.isNullOrEmpty()) {
+                        return arrayOf(pkgName.substringBefore(':'))
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
+
+        return emptyArray()
+    }
+
+    internal fun resolveSystemPackageManager(): PackageManager? {
+        return try {
+            val atClass = HookReflect.findClassOrNull("android.app.ActivityThread", null)
+                ?: return null
+            val app = HookReflect.callStaticZeroArgOrNull(atClass, "currentApplication") as? Application
+            val appPm = app?.packageManager
+            if (appPm != null) return appPm
+
+            val thread = HookReflect.callStaticZeroArgOrNull(atClass, "currentActivityThread")
+                ?: return null
+            val sysCtx = HookReflect.callZeroArgOrNull(thread, "getSystemContext") as? Context
+            sysCtx?.packageManager
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     fun findAllowlistedPackageForUid(uid: Int, predicate: (AppPolicy) -> Boolean): String? {

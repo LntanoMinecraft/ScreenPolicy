@@ -98,4 +98,18 @@ internal object HookReflect {
             null
         }
     }
+
+    fun callStaticMethodExactOrNull(
+        clazz: Class<*>,
+        methodName: String,
+        paramTypes: Array<Class<*>>,
+        vararg args: Any?,
+    ): Any? {
+        val method = findMethodExactOrNull(clazz, methodName, *paramTypes) ?: return null
+        return try {
+            method.invoke(null, *args)
+        } catch (_: Throwable) {
+            null
+        }
+    }
 }

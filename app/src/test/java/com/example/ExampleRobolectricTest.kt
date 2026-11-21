@@ -460,4 +460,136 @@ class ExampleRobolectricTest {
         assertTrue(partialState.hasSystemScope)
         assertFalse(partialState.hasSystemUiScope)
     }
+
+    @Suppress("unused")
+    private class FakeAudioSystem {
+        companion object {
+            @JvmStatic
+            var lastUid: Int = -1
+
+            @JvmStatic
+            var lastFlags: Int = -1
+
+            @JvmStatic
+            fun setAllowedCapturePolicy(uid: Int, flags: Int): Int {
+                lastUid = uid
+                lastFlags = flags
+                return 0
+            }
+
+            @JvmStatic
+            fun setAllowedCapturePolicy(uid: Int, flags: String): Int = -1
+        }
+    }
+
+    @Suppress("unused")
+    private class FakePlaybackActivityMonitor {
+        var lastUid: Int = -1
+        var lastPolicy: Int = -1
+
+        fun setAllowedCapturePolicy(uid: Int, capturePolicy: Int): Int {
+            lastUid = uid
+            lastPolicy = capturePolicy
+            return 0
+        }
+    }
+
+    @Test
+    fun `audio capture hook clears audioserver flags, flushes cache, and works independently of screenshot or record flags`() {
+        // 1. Exact (int, int) method matching on AudioSystem
+        val matched = com.example.hook.AudioCaptureHook.selectAudioSystemSetPolicyMethod(
+            FakeAudioSystem::class.java,
+        )
+        assertTrue(matched != null)
+        assertEquals(2, matched!!.parameterCount)
+        assertEquals(Int::class.javaPrimitiveType, matched.parameterTypes[0])
+        assertEquals(Int::class.javaPrimitiveType, matched.parameterTypes[1])
+
+        // 2. Clears AUDIO_FLAG_NO_MEDIA_PROJECTION (0x400) | AUDIO_FLAG_NO_SYSTEM_CAPTURE (0x800)
+        assertEquals(
+            0,
+            com.example.hook.AudioCaptureHook.computeEffectiveAudioSystemFlags(
+                currentFlags = 0x400 or 0x800,
+                isAllowlisted = true,
+            ),
+        )
+        assertEquals(
+            0x400,
+            com.example.hook.AudioCaptureHook.computeEffectiveAudioSystemFlags(
+                currentFlags = 0x400,
+                isAllowlisted = false,
+            ),
+        )
+
+        // 3. Service policy forced to ALLOW_CAPTURE_BY_ALL (1) when allowlisted
+        assertEquals(
+            com.example.hook.AudioCaptureHook.ALLOW_CAPTURE_BY_ALL,
+            com.example.hook.AudioCaptureHook.computeEffectiveServiceCapturePolicy(
+                currentPolicy = 3,
+                isAllowlisted = true,
+            ),
+        )
+        assertEquals(
+            3,
+            com.example.hook.AudioCaptureHook.computeEffectiveServiceCapturePolicy(
+                currentPolicy = 3,
+                isAllowlisted = false,
+            ),
+        )
+
+        // 4. Active cache flush invokes AudioSystem(uid, 0) and PlaybackActivityMonitor(uid, 1)
+        FakeAudioSystem.lastUid = -1
+        FakeAudioSystem.lastFlags = -1
+        val fakeMonitor = FakePlaybackActivityMonitor()
+        val (audioSysOk, monitorOk) = com.example.hook.AudioCaptureHook.flushPolicyForTarget(
+            uid = 10288,
+            audioSystemClass = FakeAudioSystem::class.java,
+            playbackMonitorInstance = fakeMonitor,
+        )
+        assertTrue(audioSysOk)
+        assertTrue(monitorOk)
+        assertEquals(10288, FakeAudioSystem.lastUid)
+        assertEquals(0, FakeAudioSystem.lastFlags)
+        assertEquals(10288, fakeMonitor.lastUid)
+        assertEquals(1, fakeMonitor.lastPolicy)
+
+        // 5. Audio-only allowlist works independently of screenshot/screenRecord and notifies listeners
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("test_audio_only_prefs", Context.MODE_PRIVATE)
+        val audioOnlyConfig = GlobalPolicyConfig(
+            appPolicies = mapOf(
+                "com.tencent.tmgp.dfm" to AppPolicy(
+                    allowScreenshot = false,
+                    allowScreenRecord = false,
+                    allowAudioCapture = true,
+                    blockCaptureDetect = false,
+                ),
+            ),
+        )
+        prefs.edit()
+            .putString(PolicyConstants.PREF_KEY_CONFIG_JSON, PolicyJsonCodec.encode(audioOnlyConfig))
+            .commit()
+
+        var listenerTriggered = 0
+        val listener: () -> Unit = { listenerTriggered++ }
+        com.example.hook.PolicyCache.addPolicyChangeListener(listener)
+        try {
+            com.example.hook.PolicyCache.applyFromPreferences(prefs)
+            assertEquals(1, listenerTriggered)
+            assertTrue(com.example.hook.PolicyCache.isAudioCaptureAllowed("com.tencent.tmgp.dfm"))
+            assertFalse(com.example.hook.PolicyCache.isScreenshotAllowed("com.tencent.tmgp.dfm"))
+            assertFalse(com.example.hook.PolicyCache.isScreenRecordAllowed("com.tencent.tmgp.dfm"))
+            assertEquals(
+                setOf("com.tencent.tmgp.dfm"),
+                com.example.hook.PolicyCache.getAudioCaptureAllowedPackages(),
+            )
+            com.example.hook.PolicyCache.registerResolvedUid(10288, "com.tencent.tmgp.dfm")
+            assertEquals(
+                "com.tencent.tmgp.dfm",
+                com.example.hook.PolicyCache.findAllowlistedPackageForUid(10288) { it.allowAudioCapture },
+            )
+        } finally {
+            com.example.hook.PolicyCache.removePolicyChangeListener(listener)
+        }
+    }
 }

@@ -105,6 +105,19 @@ class PolicyModuleEntry : XposedModule() {
                         CaptureDetectHook.install(module, classLoader)
                     }
 
+                    // Proactively clear stale audioserver capture-policy cache for allowlisted UIDs
+                    // (immediate best-effort + post-boot deferred pass once PM/AudioService are up).
+                    AudioCaptureHook.scheduleActiveCacheRefresh(
+                        classLoader = classLoader,
+                        delayMs = 0L,
+                        reason = "boot_init",
+                    )
+                    AudioCaptureHook.scheduleActiveCacheRefresh(
+                        classLoader = classLoader,
+                        delayMs = 15_000L,
+                        reason = "boot_settled",
+                    )
+
                     val elapsedMs = (SystemClock.elapsedRealtime() - mountStartMs).coerceAtLeast(0L)
                     DualTrackLogger.recordStartupSummary(
                         scope = PolicyConstants.SCOPE_SYSTEM,
