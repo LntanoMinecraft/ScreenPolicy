@@ -118,7 +118,8 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-fun resolveVersionCode(): Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 7
+fun resolveVersionCode(): Int =
+  System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 10 + it } ?: 7
 
 fun resolveVersionName(): String =
   System.getenv("RELEASE_VERSION")
