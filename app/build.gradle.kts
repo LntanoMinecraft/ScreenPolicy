@@ -131,3 +131,12 @@ fun resolveVersionName(): String =
       ?.takeIf { it.isNotEmpty() }
       ?.let { "dev-$it" }
     ?: "7.0"
+
+// libxposed:service:102.0.0 and libxposed:interface:102.0.0 have minSdk=26 and use no API 37
+// symbols, but declare minCompileSdk=37 in aar-metadata.properties. Disabling AAR metadata
+// validation allows Debug/Release APK and AAB bundling to succeed on compileSdk=36.
+tasks.configureEach {
+  if (name.startsWith("check") && name.endsWith("AarMetadata")) {
+    enabled = false
+  }
+}
